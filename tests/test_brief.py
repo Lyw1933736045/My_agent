@@ -57,3 +57,49 @@ class BriefNodeTests(unittest.TestCase):
                             ]
                         }
                     )
+
+    def test_accepts_media_insights_without_raw_content(self):
+        llm = _FakeLLM()
+        llm.invoke = lambda system_prompt, user_prompt: (
+            "# 简报\n\n## 媒体怎么解读\n"
+            "[媒体报道](https://media.example/a)认为政策影响仍待观察。"
+        )
+        brief = BriefNode(llm).run(
+            {
+                "topic": "政策影响",
+                "official_documents": [],
+                "media_insights": [
+                    {
+                        "title": "媒体报道",
+                        "source_name": "测试媒体",
+                        "url": "https://media.example/a",
+                        "reported_facts": [],
+                        "interpretations": ["政策影响仍待观察"],
+                        "affected_parties": [],
+                        "risks_or_disagreements": [],
+                    }
+                ],
+            }
+        )
+        self.assertIn("https://media.example/a", brief)
+
+    def test_accepts_social_insights_without_official_documents(self):
+        llm = _FakeLLM()
+        llm.invoke = lambda system_prompt, user_prompt: (
+            "# 简报\n\n## 社交平台在讨论什么\n"
+            "[微博热议](https://weibo.com/a)关注政策影响。"
+        )
+        brief = BriefNode(llm).run(
+            {
+                "topic": "政策影响",
+                "official_documents": [],
+                "media_insights": [],
+                "social_insights": [{
+                    "title": "微博热议",
+                    "source_name": "微博",
+                    "source_group": "social_media",
+                    "url": "https://weibo.com/a",
+                }],
+            }
+        )
+        self.assertIn("https://weibo.com/a", brief)

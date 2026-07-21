@@ -48,3 +48,27 @@ python3 -m My_agent.cli brief --ids 1,2,3
 每条候选都会重新在线读取官方正文并调用 FactNode。BriefNode 只接收提取后的
 EventFact 和官方链接，不接收搜索摘要或完整网页正文。简报保存在
 `My_agent/reports/`。
+
+## 媒体候选检索
+
+媒体来源配置位于 `config/media_sources.yaml`。每个 NewsNow 来源通过 `source_group`
+标记为 `news_media` 或 `social_media`，RSS 用于补充最新文章；程序先按动态关键词
+匹配、去重并限制每个来源的数量，不会把全部抓取结果交给 LLM：
+
+```bash
+python3 -m My_agent.cli media-search \
+  --query "新能源汽车购置税政策对车企和消费有什么影响？"
+```
+
+该命令只输出待读取的媒体候选；需要完整简报时使用下面的一步式命令。
+
+一步完成新闻媒体与社交平台检索、正文读取和联合简报：
+
+```bash
+python3 -m My_agent.cli topic-brief \
+  --query "央行降准对银行、债券市场和实体经济融资成本有什么影响？"
+```
+
+生成的 Markdown 简报保存在 `My_agent/reports/`。使用 `--no-save` 可只打印结果。
+当前 `config/media_sources.yaml` 中的 `official.enabled` 为 `false`，所以官方检索支路
+暂时关闭；改为 `true` 即可恢复国务院搜索和官方 RSS。

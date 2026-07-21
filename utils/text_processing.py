@@ -19,10 +19,34 @@ def remove_reasoning_from_output(text: str) -> str:
 
 
 def extract_json(text: str) -> Any:
-    cleaned = clean_json_tags(remove_reasoning_from_output(text))
+    """按 TrendRadar 的顺序提取、解析并尝试本地修复 JSON。"""
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("LLM 返回空响应")
+
+    response = text.strip()
+    if "```json" in response.lower():
+        start = response.lower().find("```json") + len("```json")
+        end = response.find("```", start)
+        cleaned = response[start:end if end >= 0 else None].strip()
+    elif "```" in response:
+        parts = response.split("```", 2)
+        cleaned = parts[1].strip() if len(parts) >= 2 else response
+    else:
+        cleaned = response
+
     try:
         return json.loads(cleaned)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as parse_error:
+        try:
+            from json_repair import repair_json
+
+            repaired = repair_json(cleaned, return_objects=True)
+            if isinstance(repaired, (dict, list)):
+                return repaired
+        except (ImportError, ValueError, TypeError):
+            pass
+
+        # 兼容没有代码围栏、JSON 前后夹带解释文字的模型。
         decoder = json.JSONDecoder()
         for index, char in enumerate(cleaned):
             if char not in "[{":
@@ -32,7 +56,10 @@ def extract_json(text: str) -> Any:
                 return value
             except json.JSONDecodeError:
                 continue
-    raise ValueError("无法从 LLM 响应中解析 JSON")
+        context = cleaned[max(0, parse_error.pos - 30):parse_error.pos + 30]
+        raise ValueError(
+            f"无法从 LLM 响应中解析 JSON：{parse_error.msg}；上下文：{context}"
+        ) from parse_error
 
 
 def format_search_results_for_prompt(

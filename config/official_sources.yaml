@@ -55,6 +55,20 @@ sources:
       - payment_policy
       - credit_policy
 
+  - source_id: stats
+    name: 国家统计局
+    organization: 国家统计局
+    source_type: national_statistics
+    priority: 1
+    allowed_domain_suffixes:
+      - stats.gov.cn
+    allowed_path_prefixes:
+      - /sj/
+    event_types:
+      - macroeconomic_data
+      - statistical_release
+      - data_interpretation
+
   - source_id: nfra
     name: 国家金融监督管理总局
     organization: 国家金融监督管理总局

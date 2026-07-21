@@ -38,6 +38,13 @@ class OfficialSourcesRegistryTests(unittest.TestCase):
         self.assertEqual(result.source_id, "pbc")
         self.assertEqual(result.verification_status, "verified")
 
+    def test_recognizes_stats_rss_article_domain(self):
+        result = self.registry.match_url(
+            "https://www.stats.gov.cn/sj/zxfb/202607/example.html"
+        )
+        self.assertEqual(result.source_id, "stats")
+        self.assertEqual(result.verification_status, "verified")
+
     def test_does_not_match_domain_suffix_attack(self):
         result = self.registry.match_url(
             "https://pbc.gov.cn.example.com/tiaofasi/144941/144957/document.html"

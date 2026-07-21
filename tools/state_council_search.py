@@ -167,6 +167,8 @@ class StateCouncilSearch:
             raise ValueError(f"国务院搜索返回 HTTP {exc.code}") from exc
         except URLError as exc:
             raise ValueError(f"无法访问国务院搜索：{exc.reason}") from exc
+        except TimeoutError as exc:
+            raise ValueError("国务院搜索读取超时") from exc
 
         try:
             payload = json.loads(raw)

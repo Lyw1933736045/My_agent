@@ -119,9 +119,11 @@ class WebReader:
                 charset: Optional[str] = response.headers.get_content_charset()
                 decoded = raw.decode(charset or "utf-8", errors="replace")
         except HTTPError as exc:
-            raise ValueError(f"官方网页返回 HTTP {exc.code}") from exc
+            raise ValueError(f"网页返回 HTTP {exc.code}") from exc
         except URLError as exc:
-            raise ValueError(f"无法读取官方网页：{exc.reason}") from exc
+            raise ValueError(f"无法读取网页：{exc.reason}") from exc
+        except TimeoutError as exc:
+            raise ValueError("网页读取超时") from exc
 
         if content_type in {"text/html", "application/xhtml+xml"}:
             parser = _ReadableHTMLParser()

@@ -6,6 +6,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from ..tools.media_models import MediaDocument, MediaInsight
+
 
 def now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")

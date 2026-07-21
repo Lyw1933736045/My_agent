@@ -1,0 +1,162 @@
+version: 1
+
+defaults:
+  enabled: true
+  check_interval: daily
+  trust_level: primary
+  require_https: true
+  save_raw_html: true
+  follow_attachments: true
+
+sources:
+  - source_id: state_council
+    name: 国务院政策文件库
+    organization: 国务院
+    source_type: central_government
+    priority: 1
+    allowed_domain_suffixes:
+      - www.gov.cn
+    list_urls:
+      - https://sousuo.www.gov.cn/zcwjk/policyDocumentLibrary
+    event_types:
+      - financial_policy
+      - macro_policy
+      - administrative_regulation
+    include_keywords:
+      - 金融
+      - 资本市场
+      - 货币政策
+      - 保险
+      - 银行
+      - 证券
+      - 期货
+      - 外汇
+      - 地方债
+      - 金融风险
+
+  - source_id: pbc
+    name: 中国人民银行
+    organization: 中国人民银行
+    source_type: central_bank
+    priority: 1
+    allowed_domain_suffixes:
+      - pbc.gov.cn
+    homepage_url: https://www.pbc.gov.cn/
+    allowed_path_prefixes:
+      - /tiaofasi/144941/144957/
+      - /tiaofasi/144941/3581332/
+      - /tiaofasi/144941/144979/3941920/
+      - /goutongjiaoliu/113456/113469/
+      - /zhengcehuobisi/
+    event_types:
+      - monetary_policy
+      - macro_prudential_policy
+      - financial_market_policy
+      - payment_policy
+      - credit_policy
+
+  - source_id: nfra
+    name: 国家金融监督管理总局
+    organization: 国家金融监督管理总局
+    source_type: financial_regulator
+    priority: 1
+    allowed_domain_suffixes:
+      - nfra.gov.cn
+    list_urls:
+      - https://www.nfra.gov.cn/cn/view/pages/zhengwuxinxi/zhengfuxinxi.html
+      - https://www.nfra.gov.cn/cn/view/pages/ItemList.html?itemId=859&itemName=政策法规&itemPId=923&itemUrl=ItemListRightList.html&itemsubPId=924
+    event_types:
+      - banking_regulation
+      - insurance_regulation
+      - asset_management_regulation
+      - financial_consumer_protection
+
+  - source_id: csrc
+    name: 中国证券监督管理委员会
+    organization: 中国证监会
+    source_type: securities_regulator
+    priority: 1
+    allowed_domain_suffixes:
+      - csrc.gov.cn
+    list_urls:
+      - https://www.csrc.gov.cn/csrc/c101981/zfxxgk_zdgk.shtml
+      - https://www.csrc.gov.cn/csrc/c100039/common_list.shtml
+      - https://neris.csrc.gov.cn/falvfagui/
+    event_types:
+      - securities_policy
+      - futures_policy
+      - fund_regulation
+      - listed_company_regulation
+      - market_risk_control
+
+  - source_id: safe
+    name: 国家外汇管理局
+    organization: 国家外汇管理局
+    source_type: foreign_exchange_regulator
+    priority: 1
+    allowed_domain_suffixes:
+      - safe.gov.cn
+    list_urls:
+      - https://www.safe.gov.cn/safe/zcfg/index.html
+      - https://www.safe.gov.cn/safe/zcfgjd/index.html
+    event_types:
+      - foreign_exchange_policy
+      - cross_border_finance
+      - capital_account_policy
+      - exchange_rate_risk
+
+  - source_id: mof
+    name: 中华人民共和国财政部
+    organization: 财政部
+    source_type: fiscal_authority
+    priority: 2
+    allowed_domain_suffixes:
+      - mof.gov.cn
+    list_urls:
+      - https://www.mof.gov.cn/zhengwuxinxi/zhengcefabu/
+      - https://www.mof.gov.cn/gkml/bulinggonggao/tongzhitonggao/
+      - https://www.mof.gov.cn/gkml/caizhengshuju/
+    event_types:
+      - fiscal_policy
+      - government_bond_policy
+      - tax_policy
+      - local_government_debt
+      - inclusive_finance
+
+  - source_id: cffex
+    name: 中国金融期货交易所
+    organization: 中金所
+    source_type: financial_exchange
+    priority: 2
+    enabled: true
+    allowed_domain_suffixes:
+      - cffex.com.cn
+    list_urls:
+      - https://www.cffex.com.cn/cn/jystz.html
+      - https://www.cffex.com.cn/cn/jysgz.html
+    event_types:
+      - futures_rule
+      - margin_adjustment
+      - trading_limit
+      - contract_rule
+      - risk_control
+
+global_filters:
+  exclude_title_keywords:
+    - 人事任免
+    - 采购公告
+    - 招聘
+    - 培训通知
+    - 考试公告
+  accepted_document_keywords:
+    - 通知
+    - 公告
+    - 意见
+    - 办法
+    - 规定
+    - 决定
+    - 指引
+    - 细则
+    - 征求意见
+    - 答记者问
+    - 政策解读

@@ -7,9 +7,11 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from dotenv import load_dotenv
 
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "media_sources.yaml"
+ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
 
 class MediaSourcesConfigError(ValueError):
@@ -77,12 +79,15 @@ def load_media_sources(config_path: str | Path = DEFAULT_CONFIG_PATH) -> dict:
 
 def resolve_feed_url(url: str) -> str:
     """展开 RSS URL 中的环境变量，并拒绝未配置的占位符。"""
+    # Settings 不会把未声明字段写进 os.environ；这里显式加载本项目 .env。
+    load_dotenv(ENV_FILE, override=False)
     template = str(url).strip()
     if "${RSSHUB_BASE}" in template:
         base = os.environ.get("RSSHUB_BASE", "").strip().rstrip("/")
         if not base:
             raise MediaSourcesConfigError(
-                "RSSHub 地址未配置，请设置 RSSHUB_BASE，例如 https://rsshub.app"
+                "RSSHub 地址未配置，请在 My_agent/.env 设置 RSSHUB_BASE，"
+                "例如 http://localhost:1200"
             )
         template = template.replace("${RSSHUB_BASE}", base)
     resolved = os.path.expandvars(template).rstrip("/")

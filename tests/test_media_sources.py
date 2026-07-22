@@ -25,17 +25,16 @@ class MediaSourceConfigTests(unittest.TestCase):
         ]
         self.assertEqual(social_ids, ["weibo", "zhihu", "bilibili-hot-search"])
         self.assertFalse(config["official"]["enabled"])
-        self.assertTrue(config["rss"]["feeds"])
-        self.assertTrue(all(
-            item["layer"] == "media"
-            and item["source_group"] in {"news_media", "social_media"}
-            for item in config["rss"]["feeds"]
-        ))
-        self.assertEqual(len(config["rss"]["official_feeds"]), 8)
+        self.assertEqual(len(config["rss"]["feeds"]), 20)
         self.assertEqual(
-            len([item for item in config["rss"]["official_feeds"] if item.get("enabled", True)]),
-            6,
+            len([item for item in config["rss"]["feeds"] if item.get("enabled", True)]),
+            17,
         )
+        self.assertEqual(
+            {item["source_group"] for item in config["rss"]["feeds"]},
+            {"news_media", "social_media"},
+        )
+        self.assertEqual(config["rss"]["official_feeds"], [])
         self.assertGreater(config["selection"]["candidate_limit"], 0)
 
     @patch.dict("os.environ", {"RSSHUB_BASE": "https://rsshub.example/"})

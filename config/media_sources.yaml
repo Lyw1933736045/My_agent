@@ -77,73 +77,135 @@ rss:
   timeout_seconds: 15
   max_content_bytes: 6000000
   max_age_days: 30
-  official_feeds:
-    # 中国政府网路由依赖 RSSHub；通过环境变量 RSSHUB_BASE 指定实例。
-    - id: "gov-policy"
-      name: "中国政府网-政策文件"
-      url: "${RSSHUB_BASE}/gov/cn/news/zhengce"
-      layer: "fact"
-      source_group: "official_source"
-    - id: "gov-state-council"
-      name: "中国政府网-国务院信息"
-      url: "${RSSHUB_BASE}/gov/cn/news/gwy"
-      layer: "fact"
-      source_group: "official_source"
-    - id: "gov-departments"
-      name: "中国政府网-部门政务"
-      url: "${RSSHUB_BASE}/gov/cn/news/bm"
-      layer: "fact"
-      source_group: "official_source"
-    - id: "gov-policy-library"
-      name: "国务院政策文件库"
-      url: "${RSSHUB_BASE}/gov/zhengce/zhengceku/gwywj"
-      layer: "fact"
-      source_group: "official_source"
-    # 国家统计局提供官方原生 RSS，不依赖 RSSHub。
-    - id: "stats-latest"
-      name: "国家统计局-最新发布"
-      url: "https://www.stats.gov.cn/sj/zxfb/rss.xml"
-      layer: "fact"
-      source_group: "official_source"
-    - id: "stats-analysis"
-      name: "国家统计局-数据解读"
-      url: "https://www.stats.gov.cn/sj/sjjd/rss.xml"
-      layer: "fact"
-      source_group: "official_source"
-    # 人民银行路由先保留配置，逐个验证后再启用。
-    - id: "pbc-open-market"
-      name: "人民银行-公开市场业务公告"
-      url: "${RSSHUB_BASE}/pbc/tradeAnnouncement"
-      layer: "fact"
-      source_group: "official_source"
-      enabled: false
-    - id: "pbc-news"
-      name: "人民银行-沟通交流"
-      url: "${RSSHUB_BASE}/pbc/goutongjiaoliu"
-      layer: "fact"
-      source_group: "official_source"
-      enabled: false
+  # 暂无官方 RSS 来源。
+  official_feeds: []
 
-  # media 层进入 MediaNode，来源属性由 source_group 表示。
   feeds:
-    - id: "hacker-news"
-      name: "Hacker News"
-      url: "https://hnrss.org/frontpage"
+    # 财经与新闻媒体
+    - id: "wallstreetcn-live"
+      name: "华尔街见闻-实时快讯"
+      url: "${RSSHUB_BASE}/wallstreetcn/live"
       layer: "media"
       source_group: "news_media"
-    - id: "yahoo-finance"
-      name: "Yahoo Finance"
-      url: "https://finance.yahoo.com/news/rssindex"
+      enabled: true
+    - id: "wallstreetcn-hot"
+      name: "华尔街见闻-热门文章"
+      url: "${RSSHUB_BASE}/wallstreetcn/hot"
       layer: "media"
       source_group: "news_media"
+      enabled: true
+    - id: "wallstreetcn-news"
+      name: "华尔街见闻-新闻"
+      url: "${RSSHUB_BASE}/wallstreetcn/news"
+      layer: "media"
+      source_group: "news_media"
+      enabled: true
+    - id: "jin10"
+      name: "金十数据"
+      url: "${RSSHUB_BASE}/jin10"
+      layer: "media"
+      source_group: "news_media"
+      enabled: true
+    - id: "gelonghui-live"
+      name: "格隆汇-实时快讯"
+      url: "${RSSHUB_BASE}/gelonghui/live"
+      layer: "media"
+      source_group: "news_media"
+      enabled: true
+    - id: "gelonghui-home"
+      name: "格隆汇-首页"
+      url: "${RSSHUB_BASE}/gelonghui/home"
+      layer: "media"
+      source_group: "news_media"
+      enabled: true
+    - id: "gelonghui-hot"
+      name: "格隆汇-热门文章"
+      url: "${RSSHUB_BASE}/gelonghui/hot-article"
+      layer: "media"
+      source_group: "news_media"
+      enabled: true
+    - id: "cls-hot"
+      name: "财联社-热门"
+      url: "${RSSHUB_BASE}/cls/hot"
+      layer: "media"
+      source_group: "news_media"
+      enabled: true
+    - id: "cls-depth"
+      name: "财联社-深度"
+      url: "${RSSHUB_BASE}/cls/depth/1000"
+      layer: "media"
+      source_group: "news_media"
+      enabled: true
+    - id: "cls-telegraph"
+      name: "财联社-电报"
+      url: "${RSSHUB_BASE}/cls/telegraph"
+      layer: "media"
+      source_group: "news_media"
+      enabled: true
 
-    # RSSHub 社交平台路由，验证实例可用后再开启。
+    # 动态关键词路由，启用前需由程序替换查询参数。
+    - id: "gelonghui-keyword"
+      name: "格隆汇-关键词"
+      url_template: "${RSSHUB_BASE}/gelonghui/keyword/{keyword}"
+      layer: "media"
+      source_group: "news_media"
+      enabled: false
+    - id: "eastmoney-search"
+      name: "东方财富-关键词搜索"
+      url_template: "${RSSHUB_BASE}/eastmoney/search/{keyword}"
+      layer: "media"
+      source_group: "news_media"
+      enabled: false
+
+    # 投资与社交平台
     - id: "xueqiu-hot"
-      name: "雪球热门"
+      name: "雪球-热门内容"
       url: "${RSSHUB_BASE}/xueqiu/hots"
       layer: "media"
       source_group: "social_media"
+      enabled: true
+    - id: "xueqiu-today"
+      name: "雪球-今日话题"
+      url: "${RSSHUB_BASE}/xueqiu/today"
+      layer: "media"
+      source_group: "social_media"
+      enabled: true
+    - id: "weibo-hot"
+      name: "微博-热搜"
+      url: "${RSSHUB_BASE}/weibo/search/hot"
+      layer: "media"
+      source_group: "social_media"
+      enabled: true
+    - id: "weibo-keyword"
+      name: "微博-关键词"
+      url_template: "${RSSHUB_BASE}/weibo/keyword/{keyword}"
+      layer: "media"
+      source_group: "social_media"
       enabled: false
+    - id: "zhihu-hot"
+      name: "知乎-热榜"
+      url: "${RSSHUB_BASE}/zhihu/hot"
+      layer: "media"
+      source_group: "social_media"
+      enabled: true
+    - id: "bilibili-hot-search"
+      name: "B站-热搜"
+      url: "${RSSHUB_BASE}/bilibili/hot-search"
+      layer: "media"
+      source_group: "social_media"
+      enabled: true
+    - id: "bilibili-popular"
+      name: "B站-热门"
+      url: "${RSSHUB_BASE}/bilibili/popular"
+      layer: "media"
+      source_group: "social_media"
+      enabled: true
+    - id: "bilibili-ranking"
+      name: "B站-排行榜"
+      url: "${RSSHUB_BASE}/bilibili/ranking/0/3/1"
+      layer: "media"
+      source_group: "social_media"
+      enabled: true
 
 selection:
   candidate_limit: 20

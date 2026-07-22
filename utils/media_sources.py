@@ -37,12 +37,13 @@ def load_media_sources(config_path: str | Path = DEFAULT_CONFIG_PATH) -> dict:
     official = _mapping(root.get("official", {}), "official")
     newsnow = _mapping(root.get("newsnow"), "newsnow")
     rss = _mapping(root.get("rss"), "rss")
+    tavily = _mapping(root.get("tavily", {"enabled": False}), "tavily")
     selection = _mapping(root.get("selection"), "selection")
     if not isinstance(newsnow.get("sources"), list):
         raise MediaSourcesConfigError("配置字段 newsnow.sources 必须是列表")
-    valid_groups = {"news_media", "social_media"}
+    newsnow_groups = {"news_media", "social_media"}
     for source in newsnow["sources"]:
-        if not isinstance(source, dict) or source.get("source_group") not in valid_groups:
+        if not isinstance(source, dict) or source.get("source_group") not in newsnow_groups:
             raise MediaSourcesConfigError(
                 "newsnow.sources 每项必须配置 news_media 或 social_media"
             )
@@ -60,19 +61,24 @@ def load_media_sources(config_path: str | Path = DEFAULT_CONFIG_PATH) -> dict:
                 "rss.official_feeds 每项必须配置 layer=fact 和 "
                 "source_group=official_source"
             )
+    rss_media_groups = {"official_media", "news_media", "social_media"}
     for feed in rss["feeds"]:
         if (
             not isinstance(feed, dict)
             or feed.get("layer") != "media"
-            or feed.get("source_group") not in valid_groups
+            or feed.get("source_group") not in rss_media_groups
         ):
             raise MediaSourcesConfigError(
-                "rss.feeds 每项必须配置 layer=media，并指定新闻或社交来源分组"
+                "rss.feeds 每项必须配置 layer=media，并指定 "
+                "official_media、news_media 或 social_media"
             )
+    if "enabled" in tavily and not isinstance(tavily.get("enabled"), bool):
+        raise MediaSourcesConfigError("配置字段 tavily.enabled 必须是布尔值")
     return {
         "official": official,
         "newsnow": newsnow,
         "rss": rss,
+        "tavily": tavily,
         "selection": selection,
     }
 

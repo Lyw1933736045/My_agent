@@ -39,7 +39,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         search_parser.add_argument("--limit", type=int, default=10)
 
         media_parser = subparsers.add_parser(
-            "media-search", help="按自然语言主题检索 NewsNow 与 RSS 媒体候选"
+            "media-search", help="按自然语言主题检索 NewsNow、RSS 与 Tavily 媒体候选"
         )
         media_parser.add_argument("--query", required=True)
         media_parser.add_argument("--limit", type=int, default=None)
@@ -204,6 +204,7 @@ def _run_search_web(args: argparse.Namespace) -> int:
 
 def _run_media_search(args: argparse.Namespace) -> int:
     try:
+        _progress("—— 媒体检索：开始 ——")
         plan, candidates, _ = _find_media_candidates(
             args.query, _create_llm_client(), args.limit
         )
@@ -216,7 +217,7 @@ def _run_media_search(args: argparse.Namespace) -> int:
     for index, query in enumerate(plan["media_queries"], 1):
         print(f"{index}. {query}")
     if not candidates:
-        print("当前 NewsNow 热榜和 RSS 中没有匹配的媒体文章。")
+        print("当前 NewsNow、RSS 与 Tavily 中没有匹配的媒体文章。")
         return 0
     print("来源\t发现方式\t发布时间\t标题\tURL")
     for candidate in candidates:
@@ -227,10 +228,15 @@ def _run_media_search(args: argparse.Namespace) -> int:
     return 0
 
 
+def _progress(message: str) -> None:
+    print(message, file=sys.stderr, flush=True)
+
+
 def _find_media_candidates(query: str, llm_client, limit: int | None = None):
     """统一执行媒体规划、抓取和确定性筛选。"""
     from .nodes import QueryPlanNode
     from .tools import NewsNowProvider, RSSProvider, filter_media_candidates
+    from .tools.tavily_provider import TavilyMediaProvider
     from .utils.config import Settings
     from .utils.media_sources import (
         MediaSourcesConfigError,
@@ -240,20 +246,36 @@ def _find_media_candidates(query: str, llm_client, limit: int | None = None):
 
     settings = Settings()
     config = load_media_sources()
+    _progress("① 正在规划检索词……")
     plan = QueryPlanNode(llm_client).run({"query": query})
+    _progress(
+        f"   主题：{plan['topic']}；关键词 {len(plan['media_queries'])} 条"
+    )
     selection = config["selection"]
     candidate_limit = limit or int(selection.get("candidate_limit", 20))
     candidates = []
+    before = 0
 
     newsnow = config["newsnow"]
     if newsnow.get("enabled", True):
+        sources = [item for item in newsnow.get("sources", []) if item.get("enabled", True)]
+        _progress(f"② 正在抓取 NewsNow（{len(sources)} 个平台）……")
         candidates.extend(
             NewsNowProvider(
                 api_url=str(newsnow.get("api_url", "")),
                 sources=newsnow.get("sources", []),
                 timeout=float(newsnow.get("timeout_seconds", 10)),
-            ).search(plan["media_queries"], limit=candidate_limit * 2)
+            ).search(
+                plan["media_queries"],
+                limit=candidate_limit * 2,
+                progress=_progress,
+            )
         )
+        _progress(f"   NewsNow 累计候选：{len(candidates) - before}")
+        before = len(candidates)
+    else:
+        _progress("② NewsNow 已关闭，跳过")
+
     rss = config["rss"]
     if rss.get("enabled", False):
         feeds = []
@@ -266,7 +288,8 @@ def _find_media_candidates(query: str, llm_client, limit: int | None = None):
                 feeds.append(resolved)
             except MediaSourcesConfigError as exc:
                 name = feed.get("name", feed.get("id"))
-                print(f"媒体 RSS 跳过：{name}（{exc}）", file=sys.stderr)
+                _progress(f"媒体 RSS 跳过：{name}（{exc}）")
+        _progress(f"③ 正在抓取 RSS（{len(feeds)} 个源）……")
         candidates.extend(
             RSSProvider(
                 feeds=feeds,
@@ -274,11 +297,52 @@ def _find_media_candidates(query: str, llm_client, limit: int | None = None):
                 max_age_days=int(rss.get("max_age_days", 3)),
                 max_content_bytes=int(rss.get("max_content_bytes", 6_000_000)),
                 user_agent=settings.WEB_USER_AGENT,
-            ).search(plan["media_queries"], limit=candidate_limit)
+            ).search(
+                plan["media_queries"],
+                limit=candidate_limit,
+                progress=_progress,
+            )
         )
-    # 两类来源分别筛选，避免新闻来源较多时挤掉全部社交平台候选。
+        _progress(f"   RSS 累计候选：{len(candidates) - before}")
+        before = len(candidates)
+    else:
+        _progress("③ RSS 已关闭，跳过")
+
+    tavily = config.get("tavily") or {}
+    if tavily.get("enabled", False):
+        api_key = (settings.TAVILY_API_KEY or "").strip()
+        if not api_key:
+            _progress("④ 媒体 Tavily 跳过：未配置 TAVILY_API_KEY")
+        else:
+            _progress(
+                f"④ 正在抓取 Tavily（{len(plan['media_queries'])} 组关键词）……"
+            )
+            try:
+                days = tavily.get("days")
+                candidates.extend(
+                    TavilyMediaProvider(
+                        api_key,
+                        max_results_per_query=int(
+                            tavily.get("max_results_per_query", 5)
+                        ),
+                        search_depth=str(tavily.get("search_depth", "basic")),
+                        days=int(days) if days is not None else None,
+                    ).search(
+                        plan["media_queries"],
+                        limit=candidate_limit,
+                        progress=_progress,
+                    )
+                )
+                _progress(f"   Tavily 累计候选：{len(candidates) - before}")
+            except Exception as exc:
+                _progress(f"媒体 Tavily 跳过：{exc}")
+    else:
+        _progress("④ Tavily 已关闭，跳过")
+
+    # 三类来源分别筛选，避免某一类挤掉其余候选。
+    _progress("⑤ 正在按来源分组筛选候选……")
     selected = []
-    for source_group in ("news_media", "social_media"):
+    for source_group in ("official_media", "news_media", "social_media"):
         grouped = [
             candidate for candidate in candidates
             if candidate.source_group == source_group
@@ -291,6 +355,7 @@ def _find_media_candidates(query: str, llm_client, limit: int | None = None):
                 max_per_source=int(selection.get("max_per_source", 3)),
             )
         )
+    _progress(f"   筛选后候选：{len(selected)} 篇")
     return plan, selected, config
 
 
@@ -333,7 +398,7 @@ def _run_topic_brief(args: argparse.Namespace) -> int:
     try:
         settings = Settings()
         agent = _create_agent()
-        print("正在规划检索词并抓取 NewsNow/RSS……", file=sys.stderr)
+        _progress("—— 主题简报：开始媒体检索 ——")
         plan, media_candidates, media_config = _find_media_candidates(
             args.query, agent.llm_client, args.media_limit
         )
@@ -344,17 +409,17 @@ def _run_topic_brief(args: argparse.Namespace) -> int:
     official_candidates = []
     if media_config.get("official", {}).get("enabled", True):
         try:
-            print("正在检索国务院政策文件……", file=sys.stderr)
+            _progress("⑥ 正在检索国务院政策文件……")
             official_candidates = StateCouncilSearch(
                 timeout=settings.WEB_REQUEST_TIMEOUT,
                 user_agent=settings.WEB_USER_AGENT,
             ).search(plan["official_queries"], limit=args.official_limit)
         except Exception as exc:
             # 官方搜索故障时仍允许媒体分支继续生成有限简报。
-            print(f"国务院搜索跳过：{exc}", file=sys.stderr)
+            _progress(f"国务院搜索跳过：{exc}")
 
         try:
-            print("正在检索官方 RSS……", file=sys.stderr)
+            _progress("⑦ 正在检索官方 RSS……")
             official_rss_candidates = _find_official_rss_candidates(
                 plan, media_config, settings
             )
@@ -363,14 +428,17 @@ def _run_topic_brief(args: argparse.Namespace) -> int:
                 merged.setdefault(candidate.url, candidate)
             official_candidates = list(merged.values())[:args.official_limit]
         except Exception as exc:
-            print(f"官方 RSS 跳过：{exc}", file=sys.stderr)
+            _progress(f"官方 RSS 跳过：{exc}")
     else:
-        print("官方检索已通过配置关闭。", file=sys.stderr)
+        _progress("⑥ 官方检索已通过配置关闭")
 
     official_documents = []
     if official_candidates:
-        print(f"正在读取 {len(official_candidates)} 篇官方文件……", file=sys.stderr)
-    for candidate in official_candidates:
+        _progress(f"⑧ 正在读取 {len(official_candidates)} 篇官方文件……")
+    for index, candidate in enumerate(official_candidates, 1):
+        _progress(
+            f"  [{index}/{len(official_candidates)}] 官方：{candidate.title[:60]}"
+        )
         try:
             state, _ = agent.research_official_url(candidate.url, save_state=False)
             if state.event_fact is None or state.source_document is None:
@@ -382,7 +450,7 @@ def _run_topic_brief(args: argparse.Namespace) -> int:
                 }
             )
         except Exception as exc:
-            print(f"官方网页跳过：{candidate.title}（{exc}）", file=sys.stderr)
+            _progress(f"官方网页跳过：{candidate.title}（{exc}）")
 
     selection = media_config["selection"]
     read_limit = int(selection.get("read_limit", 8))
@@ -397,15 +465,20 @@ def _run_topic_brief(args: argparse.Namespace) -> int:
     # 控制传给 MediaNode 的总正文量，避免候选数量放大提示词。
     per_document_limit = max(3_000, settings.SEARCH_CONTENT_MAX_LENGTH // max(read_limit, 1))
     news_candidates = [
-        item for item in media_candidates if item.source_group == "news_media"
+        item for item in media_candidates
+        if item.source_group in {"news_media", "official_media"}
     ][:read_limit]
     social_candidates = [
         item for item in media_candidates if item.source_group == "social_media"
     ][:social_read_limit]
     selected_media = news_candidates + social_candidates
     if selected_media:
-        print(f"正在读取 {len(selected_media)} 篇媒体文章……", file=sys.stderr)
-    for candidate in selected_media:
+        _progress(f"⑨ 正在读取 {len(selected_media)} 篇媒体文章……")
+    for index, candidate in enumerate(selected_media, 1):
+        _progress(
+            f"  [{index}/{len(selected_media)}] 媒体：{candidate.source_name}｜"
+            f"{candidate.title[:50]}"
+        )
         try:
             result = reader.read(candidate.url)
             media_documents.append(
@@ -418,30 +491,36 @@ def _run_topic_brief(args: argparse.Namespace) -> int:
                 )
             )
         except Exception as exc:
-            print(f"媒体网页跳过：{candidate.title}（{exc}）", file=sys.stderr)
+            _progress(f"媒体网页跳过：{candidate.title}（{exc}）")
 
     media_insights = []
     social_insights = []
     if media_documents:
         try:
-            print("正在分别提炼新闻媒体与社交平台观点……", file=sys.stderr)
+            _progress(
+                f"⑩ 正在提炼观点（已读 {len(media_documents)} 篇）……"
+            )
             insights = [
                 asdict(item) for item in MediaNode(agent.llm_client).run(media_documents)
             ]
             media_insights = [
-                item for item in insights if item["source_group"] == "news_media"
+                item for item in insights
+                if item["source_group"] in {"news_media", "official_media"}
             ]
             social_insights = [
                 item for item in insights if item["source_group"] == "social_media"
             ]
+            _progress(
+                f"   新闻/官媒观点 {len(media_insights)}；社交观点 {len(social_insights)}"
+            )
         except Exception as exc:
-            print(f"媒体观点提炼失败：{exc}", file=sys.stderr)
+            _progress(f"媒体观点提炼失败：{exc}")
 
     if not official_documents and not media_insights and not social_insights:
         print("简报生成失败：没有可用的媒体或社交平台内容。", file=sys.stderr)
         return 1
     try:
-        print("正在生成联合简报……", file=sys.stderr)
+        _progress("⑪ 正在生成联合简报……")
         brief = BriefNode(agent.llm_client).run(
             {
                 "topic": plan["topic"],

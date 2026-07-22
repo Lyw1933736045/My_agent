@@ -23,7 +23,7 @@ SYSTEM_PROMPT_MEDIA_ANALYSIS = """
   "source_name":"媒体名称",
   "url":"最终文章链接",
   "published_at":"正文或输入明确提供的发布时间，无法确认则 null",
-  "source_group":"原样返回输入的 news_media 或 social_media",
+  "source_group":"原样返回输入的 official_media、news_media 或 social_media",
   "reported_facts":["报道直接陈述的事实"]或[],
   "interpretations":["媒体或具名受访者的解释"]或[],
   "affected_parties":["报道明确涉及的主体"]或[],

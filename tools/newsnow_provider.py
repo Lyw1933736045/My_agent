@@ -73,15 +73,26 @@ class NewsNowProvider:
             and (not expected or hostname == expected or hostname.endswith("." + expected))
         )
 
-    def search(self, queries: list[str], limit: int = 20) -> list[MediaCandidate]:
+    def search(
+        self,
+        queries: list[str],
+        limit: int = 20,
+        progress=None,
+    ) -> list[MediaCandidate]:
         if limit < 1:
             raise ValueError("limit 必须是正整数")
         candidates = []
-        for source in self.sources:
+        total = len(self.sources)
+        for index, source in enumerate(self.sources, 1):
+            name = str(source.get("name") or source.get("id") or "未知来源")
+            if progress:
+                progress(f"  [{index}/{total}] NewsNow：{name}")
             try:
                 payload = self.fetch_json(str(source.get("id", "")))
             except ValueError:
                 # 单个平台失败不影响其他媒体来源。
+                if progress:
+                    progress(f"  [{index}/{total}] NewsNow 失败：{name}")
                 continue
             items = payload.get("items")
             if not isinstance(items, list):
@@ -101,7 +112,7 @@ class NewsNowProvider:
                     MediaCandidate(
                         title=" ".join(title.split()),
                         url=url.strip(),
-                        source_name=str(source.get("name") or source.get("id") or "未知来源"),
+                        source_name=name,
                         published_at=None,
                         source_group=str(source.get("source_group", "news_media")),
                     )

@@ -77,79 +77,120 @@ rss:
   timeout_seconds: 15
   max_content_bytes: 6000000
   max_age_days: 30
-  # 暂无官方 RSS 来源。
+  # 暂无官方政策文件 RSS；媒体侧权威源见下方 official_media。
   official_feeds: []
 
   feeds:
-    # 财经与新闻媒体
+    # =========================
+    # 官方及权威媒体
+    # =========================
+    - id: "cctv-xwlb"
+      name: "央视新闻-新闻联播"
+      url: "${RSSHUB_BASE}/cctv/xwlb"
+      layer: "media"
+      source_group: "official_media"
+      enabled: true
+
+    - id: "people-finance"
+      name: "人民网-财经"
+      url: "${RSSHUB_BASE}/people/finance"
+      layer: "media"
+      source_group: "official_media"
+      enabled: true
+
+    - id: "inewsweek-finance"
+      name: "中国新闻周刊-经济"
+      url: "${RSSHUB_BASE}/inewsweek/finance"
+      layer: "media"
+      source_group: "official_media"
+      enabled: true
+
+    - id: "chinanews-latest"
+      name: "中国新闻网-最新"
+      url: "${RSSHUB_BASE}/chinanews"
+      layer: "media"
+      source_group: "official_media"
+      enabled: true
+
+    # =========================
+    # 内地财经媒体
+    # =========================
     - id: "wallstreetcn-live"
       name: "华尔街见闻-实时快讯"
       url: "${RSSHUB_BASE}/wallstreetcn/live"
       layer: "media"
       source_group: "news_media"
       enabled: true
+
     - id: "wallstreetcn-hot"
       name: "华尔街见闻-热门文章"
       url: "${RSSHUB_BASE}/wallstreetcn/hot"
       layer: "media"
       source_group: "news_media"
       enabled: true
+
     - id: "wallstreetcn-news"
       name: "华尔街见闻-新闻"
       url: "${RSSHUB_BASE}/wallstreetcn/news"
       layer: "media"
       source_group: "news_media"
       enabled: true
-    - id: "jin10"
-      name: "金十数据"
-      url: "${RSSHUB_BASE}/jin10"
-      layer: "media"
-      source_group: "news_media"
-      enabled: true
+
     - id: "gelonghui-live"
       name: "格隆汇-实时快讯"
       url: "${RSSHUB_BASE}/gelonghui/live"
       layer: "media"
       source_group: "news_media"
       enabled: true
+
     - id: "gelonghui-home"
       name: "格隆汇-首页"
       url: "${RSSHUB_BASE}/gelonghui/home"
       layer: "media"
       source_group: "news_media"
       enabled: true
+
     - id: "gelonghui-hot"
       name: "格隆汇-热门文章"
       url: "${RSSHUB_BASE}/gelonghui/hot-article"
       layer: "media"
       source_group: "news_media"
       enabled: true
-    - id: "cls-hot"
-      name: "财联社-热门"
-      url: "${RSSHUB_BASE}/cls/hot"
-      layer: "media"
-      source_group: "news_media"
-      enabled: true
-    - id: "cls-depth"
-      name: "财联社-深度"
-      url: "${RSSHUB_BASE}/cls/depth/1000"
-      layer: "media"
-      source_group: "news_media"
-      enabled: true
-    - id: "cls-telegraph"
-      name: "财联社-电报"
-      url: "${RSSHUB_BASE}/cls/telegraph"
+
+    - id: "yicai-latest"
+      name: "第一财经-最新"
+      url: "${RSSHUB_BASE}/yicai/latest"
       layer: "media"
       source_group: "news_media"
       enabled: true
 
-    # 动态关键词路由，启用前需由程序替换查询参数。
+    - id: "yicai-headline"
+      name: "第一财经-头条"
+      url: "${RSSHUB_BASE}/yicai/headline"
+      layer: "media"
+      source_group: "news_media"
+      enabled: true
+
+    # =========================
+    # 社交平台
+    # =========================
+    - id: "zhihu-hot"
+      name: "知乎-热榜"
+      url: "${RSSHUB_BASE}/zhihu/hot"
+      layer: "media"
+      source_group: "social_media"
+      enabled: true
+
+    # =========================
+    # 动态关键词路由（默认关闭）
+    # =========================
     - id: "gelonghui-keyword"
       name: "格隆汇-关键词"
       url_template: "${RSSHUB_BASE}/gelonghui/keyword/{keyword}"
       layer: "media"
       source_group: "news_media"
       enabled: false
+
     - id: "eastmoney-search"
       name: "东方财富-关键词搜索"
       url_template: "${RSSHUB_BASE}/eastmoney/search/{keyword}"
@@ -157,55 +198,12 @@ rss:
       source_group: "news_media"
       enabled: false
 
-    # 投资与社交平台
-    - id: "xueqiu-hot"
-      name: "雪球-热门内容"
-      url: "${RSSHUB_BASE}/xueqiu/hots"
-      layer: "media"
-      source_group: "social_media"
-      enabled: true
-    - id: "xueqiu-today"
-      name: "雪球-今日话题"
-      url: "${RSSHUB_BASE}/xueqiu/today"
-      layer: "media"
-      source_group: "social_media"
-      enabled: true
-    - id: "weibo-hot"
-      name: "微博-热搜"
-      url: "${RSSHUB_BASE}/weibo/search/hot"
-      layer: "media"
-      source_group: "social_media"
-      enabled: true
-    - id: "weibo-keyword"
-      name: "微博-关键词"
-      url_template: "${RSSHUB_BASE}/weibo/keyword/{keyword}"
-      layer: "media"
-      source_group: "social_media"
-      enabled: false
-    - id: "zhihu-hot"
-      name: "知乎-热榜"
-      url: "${RSSHUB_BASE}/zhihu/hot"
-      layer: "media"
-      source_group: "social_media"
-      enabled: true
-    - id: "bilibili-hot-search"
-      name: "B站-热搜"
-      url: "${RSSHUB_BASE}/bilibili/hot-search"
-      layer: "media"
-      source_group: "social_media"
-      enabled: true
-    - id: "bilibili-popular"
-      name: "B站-热门"
-      url: "${RSSHUB_BASE}/bilibili/popular"
-      layer: "media"
-      source_group: "social_media"
-      enabled: true
-    - id: "bilibili-ranking"
-      name: "B站-排行榜"
-      url: "${RSSHUB_BASE}/bilibili/ranking/0/3/1"
-      layer: "media"
-      source_group: "social_media"
-      enabled: true
+# Tavily 与 NewsNow/RSS 并行，只用于发现 URL；简报仍重新抓取正文。
+tavily:
+  enabled: true
+  max_results_per_query: 5
+  search_depth: "basic"
+  # days: 7
 
 selection:
   candidate_limit: 20

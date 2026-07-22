@@ -25,16 +25,33 @@ class MediaSourceConfigTests(unittest.TestCase):
         ]
         self.assertEqual(social_ids, ["weibo", "zhihu", "bilibili-hot-search"])
         self.assertFalse(config["official"]["enabled"])
-        self.assertEqual(len(config["rss"]["feeds"]), 20)
-        self.assertEqual(
-            len([item for item in config["rss"]["feeds"] if item.get("enabled", True)]),
-            17,
-        )
+        self.assertEqual(len(config["rss"]["feeds"]), 15)
+        enabled = [item for item in config["rss"]["feeds"] if item.get("enabled", True)]
+        self.assertEqual(len(enabled), 13)
         self.assertEqual(
             {item["source_group"] for item in config["rss"]["feeds"]},
-            {"news_media", "social_media"},
+            {"official_media", "news_media", "social_media"},
+        )
+        self.assertEqual(
+            {item["id"] for item in enabled},
+            {
+                "cctv-xwlb",
+                "people-finance",
+                "inewsweek-finance",
+                "chinanews-latest",
+                "wallstreetcn-live",
+                "wallstreetcn-hot",
+                "wallstreetcn-news",
+                "gelonghui-live",
+                "gelonghui-home",
+                "gelonghui-hot",
+                "yicai-latest",
+                "yicai-headline",
+                "zhihu-hot",
+            },
         )
         self.assertEqual(config["rss"]["official_feeds"], [])
+        self.assertTrue(config["tavily"]["enabled"])
         self.assertGreater(config["selection"]["candidate_limit"], 0)
 
     @patch.dict("os.environ", {"RSSHUB_BASE": "https://rsshub.example/"})
@@ -44,8 +61,9 @@ class MediaSourceConfigTests(unittest.TestCase):
             "https://rsshub.example/gov/cn/news/zhengce",
         )
 
+    @patch("My_agent.utils.media_sources.load_dotenv")
     @patch.dict("os.environ", {}, clear=True)
-    def test_rejects_missing_rsshub_base(self):
+    def test_rejects_missing_rsshub_base(self, _load_dotenv):
         with self.assertRaisesRegex(MediaSourcesConfigError, "RSSHUB_BASE"):
             resolve_feed_url("${RSSHUB_BASE}/gov/cn/news/zhengce")
 
@@ -133,6 +151,45 @@ class RSSProviderTests(unittest.TestCase):
         self.assertEqual(results[0].discovered_by, "rss")
         self.assertEqual(results[0].source_group, "social_media")
         self.assertIn("消费者", results[0].snippet)
+
+
+class TavilyMediaProviderTests(unittest.TestCase):
+    def test_converts_search_hits_to_media_candidates(self):
+        from My_agent.tools.search import SearchResponse, SearchResult
+        from My_agent.tools.tavily_provider import TavilyMediaProvider
+
+        provider = TavilyMediaProvider("tvly-test", max_results_per_query=3)
+        provider.agency.search = lambda **kwargs: SearchResponse(
+            query=kwargs["query"],
+            results=[
+                SearchResult(
+                    title="股指期货政策影响分析",
+                    url="https://wallstreetcn.com/articles/1",
+                    published_date="2026-07-21",
+                    source="wallstreetcn.com",
+                    content="机构观点与股指期货政策",
+                ),
+                SearchResult(
+                    title="知乎讨论股指期货",
+                    url="https://www.zhihu.com/question/1",
+                    published_date=None,
+                    source="zhihu.com",
+                    content="社交讨论",
+                ),
+            ],
+        )
+        results = provider.search(["股指期货 政策"], limit=10)
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0].discovered_by, "tavily")
+        by_url = {item.url: item for item in results}
+        self.assertEqual(
+            by_url["https://wallstreetcn.com/articles/1"].source_group,
+            "news_media",
+        )
+        self.assertEqual(
+            by_url["https://www.zhihu.com/question/1"].source_group,
+            "social_media",
+        )
 
 
 class _FakeLLM:

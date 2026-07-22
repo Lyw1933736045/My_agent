@@ -51,8 +51,9 @@ EventFact 和官方链接，不接收搜索摘要或完整网页正文。简报�
 
 ## 媒体候选检索
 
-媒体来源配置位于 `config/media_sources.yaml`。每个 NewsNow 来源通过 `source_group`
-标记为 `news_media` 或 `social_media`，RSS 用于补充最新文章；程序先按动态关键词
+媒体来源配置位于 `config/media_sources.yaml`。RSS 按 `official_media` /
+`news_media` / `social_media` 分组；NewsNow 热榜来源标记为 `news_media` 或
+`social_media`；Tavily 与二者并行，只发现 URL。程序先按动态关键词
 匹配、去重并限制每个来源的数量，不会把全部抓取结果交给 LLM：
 
 ```bash

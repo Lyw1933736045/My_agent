@@ -149,11 +149,22 @@ class RSSProvider:
             )
         return result
 
-    def search(self, queries: list[str], limit: int = 20) -> list[MediaCandidate]:
+    def search(
+        self,
+        queries: list[str],
+        limit: int = 20,
+        progress=None,
+    ) -> list[MediaCandidate]:
         candidates = []
-        for feed in self.feeds:
+        total = len(self.feeds)
+        for index, feed in enumerate(self.feeds, 1):
+            name = str(feed.get("name") or feed.get("id") or "未知源")
+            if progress:
+                progress(f"  [{index}/{total}] RSS：{name}")
             try:
                 candidates.extend(self.parse(self.fetch(str(feed.get("url", ""))), feed))
-            except ValueError:
+            except ValueError as exc:
+                if progress:
+                    progress(f"  [{index}/{total}] RSS 失败：{name}（{exc}）")
                 continue
         return filter_media_candidates(candidates, queries, limit=limit)

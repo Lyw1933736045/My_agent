@@ -43,15 +43,12 @@ class QueryPlanNode(BaseNode):
             raise ValueError(f"LLM 未返回有效检索计划；原始响应：{preview}")
 
         topic = parsed.get("topic")
-        # 兼容旧模型响应，避免原有官方搜索命令突然失效。
-        raw_official_queries = parsed.get("official_queries", parsed.get("search_queries"))
-        raw_media_queries = parsed.get("media_queries")
+        raw_media_queries = parsed.get(
+            "media_queries", parsed.get("search_queries", parsed.get("official_queries"))
+        )
         if not isinstance(topic, str) or not topic.strip():
             topic = query
-        if not isinstance(raw_official_queries, list):
-            preview = " ".join(response.split())[:300]
-            raise ValueError(f"LLM 未返回 official_queries 列表；原始响应：{preview}")
-        if raw_media_queries is not None and not isinstance(raw_media_queries, list):
+        if not isinstance(raw_media_queries, list):
             preview = " ".join(response.split())[:300]
             raise ValueError(f"LLM 未返回 media_queries 列表；原始响应：{preview}")
 
@@ -67,18 +64,10 @@ class QueryPlanNode(BaseNode):
                     break
             return queries
 
-        official_queries = normalize(raw_official_queries, 3)
-        media_queries = (
-            normalize(raw_media_queries, 5)
-            if isinstance(raw_media_queries, list)
-            else official_queries.copy()
-        )
-        if not official_queries or not media_queries:
+        media_queries = normalize(raw_media_queries, 5)
+        if not media_queries:
             raise ValueError("LLM 未生成可用检索词")
         return {
             "topic": topic.strip(),
-            "official_queries": official_queries,
             "media_queries": media_queries,
-            # 旧字段继续指向官方查询，供 search-web 使用。
-            "search_queries": official_queries,
         }

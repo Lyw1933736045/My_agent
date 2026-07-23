@@ -1,4 +1,4 @@
-"""可信官方来源配置加载与 URL 校验。"""
+"""旧版可信官方来源配置加载与 URL 校验。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from urllib.parse import unquote, urlparse
 import yaml
 
 
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "official_sources.yaml"
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "official_sources.yaml"
 
 
 class OfficialSourcesConfigError(ValueError):

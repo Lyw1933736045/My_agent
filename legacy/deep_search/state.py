@@ -1,4 +1,4 @@
-"""研究流程的最小状态模型。"""
+"""旧版 Deep Search 状态模型。"""
 
 import json
 from dataclasses import asdict, dataclass, field

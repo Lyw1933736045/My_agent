@@ -1,8 +1,10 @@
 from .search import SearchResponse, SearchResult, TavilySearchAgency
 from .web_reader import WebReader, WebReadResult
-from .state_council_search import OfficialSearchCandidate, StateCouncilSearch
-from .media_models import MediaCandidate, MediaDocument, MediaInsight
-from .newsnow_provider import NewsNowProvider, filter_media_candidates
+from .media_models import (
+    DiscoveryResult, MediaCandidate, MediaDocument, MediaInsight, RelevanceDecision,
+)
+from .media_discovery import MediaDiscovery
+from .newsnow_provider import NewsNowProvider
 from .rss_provider import RSSProvider
 from .tavily_provider import TavilyMediaProvider
 
@@ -12,13 +14,13 @@ __all__ = [
     "TavilySearchAgency",
     "WebReader",
     "WebReadResult",
-    "OfficialSearchCandidate",
-    "StateCouncilSearch",
+    "DiscoveryResult",
+    "MediaDiscovery",
     "MediaCandidate",
     "MediaDocument",
     "MediaInsight",
+    "RelevanceDecision",
     "NewsNowProvider",
     "RSSProvider",
     "TavilyMediaProvider",
-    "filter_media_candidates",
 ]

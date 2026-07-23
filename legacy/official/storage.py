@@ -1,4 +1,4 @@
-"""SQLite 候选文件与事实结果存储。"""
+"""旧版官方候选与事实结果存储。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from .state import EventFact
+from ..deep_search.state import EventFact
 
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parent / "data" / "my_agent.db"

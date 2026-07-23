@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from .storage import Database
-from .utils.official_sources import OfficialSourcesRegistry, UnsafeOfficialUrlError
+from .official_sources import OfficialSourcesRegistry, UnsafeOfficialUrlError
 
 
 STATE_COUNCIL_LIST_URL = (

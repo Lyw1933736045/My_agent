@@ -11,8 +11,24 @@ class MediaCandidate:
     source_name: str
     published_at: Optional[str]
     snippet: str = ""
-    discovered_by: str = "newsnow"
+    discovered_by: tuple[str, ...] = ()
     source_group: str = "news_media"
+    query: Optional[str] = None
+    guid: Optional[str] = None
+    max_age_days: Optional[int] = None
+
+
+@dataclass
+class ProviderDiagnostics:
+    failed_sources: dict[str, str] = field(default_factory=dict)
+    status_counts: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class DiscoveryResult:
+    candidates: list[MediaCandidate]
+    stats: dict[str, int]
+    errors: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -22,6 +38,16 @@ class MediaDocument:
     fetched_at: str
     content_type: str
     content: str
+
+
+@dataclass(frozen=True)
+class RelevanceDecision:
+    candidate: MediaCandidate
+    stage: str
+    relevant: bool
+    score: int
+    reason: str
+    matched_terms: tuple[str, ...] = ()
 
 
 @dataclass

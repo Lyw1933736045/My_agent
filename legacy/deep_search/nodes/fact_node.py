@@ -1,4 +1,4 @@
-"""从已读取的官方正文中提取可确认事实。"""
+"""旧版官方事实提取节点。"""
 
 import json
 from typing import Any, Optional

@@ -1,348 +1,234 @@
-"""独立金融研究 Agent 的顺序编排。"""
+"""NewsNow、RSS、Tavily 媒体研究流程编排器。"""
 
-import re
+from __future__ import annotations
+
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from loguru import logger
+from typing import Callable
 
 from .llms import LLMClient
-from .nodes import (
-    FactNode,
-    FirstSearchNode,
-    FirstSummaryNode,
-    ReflectionNode,
-    ReflectionSummaryNode,
-    ReportFormattingNode,
-    ReportStructureNode,
+from .nodes import BriefNode, CandidateFilterNode, MediaNode, QueryPlanNode
+from .state import RunState
+from .tools import (
+    MediaDiscovery,
+    MediaDocument,
+    NewsNowProvider,
+    RSSProvider,
+    TavilyMediaProvider,
+    WebReader,
 )
-from .state import Paragraph, SourceDocument, State
-from .tools import TavilySearchAgency, WebReader
-from .utils import Settings, format_search_results_for_prompt
-from .utils.official_sources import OfficialSourcesRegistry, SourceVerification
+from .utils.config import PROJECT_ROOT, Settings
+from .utils.media_sources import (
+    MediaSourcesConfigError,
+    load_media_sources,
+    resolve_feed_url,
+)
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+ProgressCallback = Callable[[str], None]
 
 
-def resolve_output_dir(configured_path: str) -> Path:
-    """将输出目录限制在 My_agent 项目根目录内。"""
-    candidate = Path(configured_path).expanduser()
-    if not candidate.is_absolute():
-        candidate = PROJECT_ROOT / candidate
-    resolved = candidate.resolve()
-    try:
-        resolved.relative_to(PROJECT_ROOT)
-    except ValueError as exc:
-        raise ValueError(
-            f"OUTPUT_DIR 必须位于 My_agent 目录内：{resolved}"
-        ) from exc
-    return resolved
-
-
-class FinancialResearchAgent:
-    def __init__(self, config: Settings):
+class FinancialMediaAgent:
+    def __init__(
+        self,
+        config: Settings,
+        *,
+        llm_client=None,
+        progress: ProgressCallback | None = None,
+    ) -> None:
         self.config = config
-        self.llm_client = LLMClient(
+        self.progress = progress
+        self.llm_client = llm_client or LLMClient(
             api_key=config.QUERY_ENGINE_API_KEY,
             model_name=config.QUERY_ENGINE_MODEL_NAME,
             base_url=config.QUERY_ENGINE_BASE_URL,
             timeout=config.LLM_REQUEST_TIMEOUT,
         )
-        self.search_agency = (
-            TavilySearchAgency(config.TAVILY_API_KEY)
-            if config.TAVILY_API_KEY
-            else None
+        self.query_plan_node = QueryPlanNode(self.llm_client)
+        self.candidate_filter_node = CandidateFilterNode(self.llm_client)
+        self.media_node = MediaNode(self.llm_client)
+        self.brief_node = BriefNode(self.llm_client)
+        self.reader = WebReader(
+            timeout=config.WEB_REQUEST_TIMEOUT,
+            max_content_bytes=config.WEB_MAX_CONTENT_BYTES,
+            max_text_length=config.WEB_MAX_TEXT_LENGTH,
+            user_agent=config.WEB_USER_AGENT,
         )
-        self.structure_node = ReportStructureNode(self.llm_client)
-        self.first_search_node = FirstSearchNode(self.llm_client)
-        self.first_summary_node = FirstSummaryNode(self.llm_client)
-        self.reflection_node = ReflectionNode(self.llm_client)
-        self.reflection_summary_node = ReflectionSummaryNode(self.llm_client)
-        self.formatting_node = ReportFormattingNode(self.llm_client)
-        self.fact_node = FactNode(self.llm_client)
-        self.official_sources = OfficialSourcesRegistry()
-        self.state = State()
 
-    def verify_official_url(self, official_url: str) -> SourceVerification:
-        """校验 URL 并返回可供 CLI 展示的来源识别结果。"""
-        return self.official_sources.match_url(official_url)
+    def _progress(self, message: str) -> None:
+        if self.progress:
+            self.progress(message)
 
-    @staticmethod
-    def _combine_source_verification(
-        requested: SourceVerification,
-        final: SourceVerification,
-        redirected: bool,
-    ) -> SourceVerification:
-        if not redirected:
-            return requested
-
-        same_source = (
-            requested.source_id is not None
-            and requested.source_id == final.source_id
-        )
-        verified = (
-            requested.verification_status == "verified"
-            and final.verification_status == "verified"
-            and same_source
-        )
-        selected = final if final.source_id else requested
-        if verified:
-            message = (
-                f"请求 URL 校验通过并发生重定向；最终 URL 仍匹配 "
-                f"{selected.source_name}。请求校验：{requested.verification_message}；"
-                f"最终校验：{final.verification_message}"
+    def _build_providers(self, media_config: dict) -> dict[str, object]:
+        providers: dict[str, object] = {}
+        newsnow = media_config["newsnow"]
+        if newsnow.get("enabled", True):
+            providers["newsnow"] = NewsNowProvider(
+                api_url=str(newsnow.get("api_url", "")),
+                sources=newsnow.get("sources", []),
+                timeout=float(newsnow.get("timeout_seconds", 30)),
+                max_retries=int(newsnow.get("max_retries", 1)),
+                retry_wait_min=float(newsnow.get("retry_wait_min_seconds", 2)),
+                retry_wait_max=float(newsnow.get("retry_wait_max_seconds", 3)),
+                request_interval=float(newsnow.get("request_interval_seconds", 0.5)),
             )
-        else:
-            message = (
-                "请求 URL 与重定向后的最终 URL 未能同时通过同一官方来源校验；"
-                f"请求校验：{requested.verification_message}；"
-                f"最终校验：{final.verification_message}"
+
+        rss = media_config["rss"]
+        if rss.get("enabled", False):
+            feeds = []
+            for feed in rss.get("feeds", []):
+                if not feed.get("enabled", True):
+                    continue
+                try:
+                    resolved = dict(feed)
+                    resolved["url"] = resolve_feed_url(str(feed.get("url", "")))
+                    feeds.append(resolved)
+                except MediaSourcesConfigError as exc:
+                    self._progress(
+                        f"RSS 跳过：{feed.get('name', feed.get('id'))}（{exc}）"
+                    )
+            providers["rss"] = RSSProvider(
+                feeds=feeds,
+                timeout=float(rss.get("timeout_seconds", 15)),
+                max_age_days=int(rss.get("max_age_days", 30)),
+                max_content_bytes=int(rss.get("max_content_bytes", 6_000_000)),
+                default_max_items=int(rss.get("default_max_items", 0)),
+                request_interval_min=float(
+                    rss.get("request_interval_min_seconds", 0.5)
+                ),
+                request_interval_max=float(
+                    rss.get("request_interval_max_seconds", 1.0)
+                ),
+                max_retries=int(rss.get("max_retries", 1)),
+                retry_wait_min=float(rss.get("retry_wait_min_seconds", 2)),
+                retry_wait_max=float(rss.get("retry_wait_max_seconds", 3)),
             )
-        return SourceVerification(
-            url=final.url,
-            source_id=selected.source_id,
-            source_name=selected.source_name,
-            source_type=selected.source_type,
-            trust_level=selected.trust_level,
-            source_priority=selected.source_priority,
-            domain_verified=requested.domain_verified and final.domain_verified and same_source,
-            path_verified=requested.path_verified and final.path_verified and same_source,
-            verification_status="verified" if verified else "unverified",
-            verification_message=message,
-        )
 
-    def research_official_url(
-        self, official_url: str, save_state: bool = True
-    ) -> tuple[State, Path | None]:
-        """读取一个官方 URL，提取事实并可选保存结构化状态。"""
-        self.state = State(query=official_url.strip())
-        requested_verification = self.verify_official_url(official_url)
-        reader = WebReader(
-            timeout=self.config.WEB_REQUEST_TIMEOUT,
-            max_content_bytes=self.config.WEB_MAX_CONTENT_BYTES,
-            max_text_length=self.config.WEB_MAX_TEXT_LENGTH,
-            user_agent=self.config.WEB_USER_AGENT,
-        )
-        read_result = reader.read(official_url)
-        redirected = read_result.requested_url != read_result.final_url
-        final_verification = self.verify_official_url(read_result.final_url)
-        verification = self._combine_source_verification(
-            requested_verification,
-            final_verification,
-            redirected,
-        )
-        self.state.source_document = SourceDocument(
-            official_url=read_result.requested_url,
-            requested_url=read_result.requested_url,
-            final_url=read_result.final_url,
-            redirected=redirected,
-            fetched_at=read_result.fetched_at,
-            content_type=read_result.content_type,
-            content=read_result.content,
-            source_id=verification.source_id,
-            source_name=verification.source_name,
-            source_type=verification.source_type,
-            trust_level=verification.trust_level,
-            source_priority=verification.source_priority,
-            domain_verified=verification.domain_verified,
-            path_verified=verification.path_verified,
-            verification_status=verification.verification_status,
-            verification_message=verification.verification_message,
-        )
-        self.state.event_fact = self.fact_node.run(self.state.source_document)
-        self.state.is_completed = True
-        self.state.touch()
+        tavily = media_config.get("tavily") or {}
+        api_key = (self.config.TAVILY_API_KEY or "").strip()
+        if tavily.get("enabled", False) and api_key:
+            days = tavily.get("days")
+            providers["tavily"] = TavilyMediaProvider(
+                api_key,
+                max_results_per_query=int(tavily.get("max_results_per_query", 5)),
+                search_depth=str(tavily.get("search_depth", "basic")),
+                days=int(days) if days is not None else None,
+            )
+        elif tavily.get("enabled", False):
+            self._progress("Tavily 跳过：未配置 TAVILY_API_KEY")
+        return providers
 
-        state_path = self._save_fact_state() if save_state else None
-        return self.state, state_path
-
-    def research(self, query: str, save_report: bool = True) -> str:
+    def discover(self, query: str, limit: int | None = None) -> RunState:
         query = query.strip()
         if not query:
-            raise ValueError("研究事件不能为空")
-        self.state = State(
-            query=query,
-            data_cutoff=datetime.now().astimezone().isoformat(timespec="minutes"),
-        )
-        self._generate_report_structure()
-        for index in range(len(self.state.paragraphs)):
-            self._initial_search_and_summary(index)
-            self._reflection_loop(index)
-            self.state.paragraphs[index].research.is_completed = True
-        report = self._generate_final_report()
-        if save_report:
-            self._save_report(report)
-        return report
+            raise ValueError("研究主题不能为空")
+        state = RunState(query=query)
+        media_config = load_media_sources()
+        self._progress("① 正在规划媒体检索词……")
+        plan = self.query_plan_node.run({"query": query})
+        state.topic = plan["topic"]
+        state.media_queries = plan["media_queries"]
 
-    def _generate_report_structure(self) -> None:
-        plan = self.structure_node.run(
-            {"query": self.state.query, "max_paragraphs": self.config.MAX_PARAGRAPHS}
+        providers = self._build_providers(media_config)
+        if not providers:
+            raise ValueError("没有可用的媒体 Provider")
+        selection = media_config["selection"]
+        self._progress(f"② 正在依次运行：{' → '.join(providers)}")
+        state.discovery = MediaDiscovery(providers).run(
+            state.media_queries,
+            limit=limit or int(selection.get("candidate_limit", 20)),
+            max_per_source=int(selection.get("max_per_source", 3)),
+            max_age_days=int(media_config["rss"].get("max_age_days", 30)),
+            progress=self.progress,
         )
-        self.state.report_title = plan["report_title"]
-        self.state.paragraphs = [
-            Paragraph(title=item["title"], content=item["content"])
-            for item in plan["paragraphs"]
-        ]
-        self.state.touch()
+        return state
 
-    def _search(self, search_plan: dict) -> tuple[str, list[dict]]:
-        if self.search_agency is None:
-            raise ValueError("搜索流程需要配置 TAVILY_API_KEY")
-        query = search_plan["search_query"]
-        response = self.search_agency.search(
-            query=query,
-            max_results=self.config.MAX_SEARCH_RESULTS,
-            search_depth=search_plan.get("search_depth", "basic"),
-            days=search_plan.get("days"),
+    def run(self, query: str, limit: int | None = None) -> RunState:
+        state = self.discover(query, limit)
+        media_config = load_media_sources()
+        selection = media_config["selection"]
+        candidates = state.discovery.candidates if state.discovery else []
+        news = [item for item in candidates if item.source_group != "social_media"]
+        social = [item for item in candidates if item.source_group == "social_media"]
+        selected = news[: int(selection.get("read_limit", 8))]
+        selected += social[: int(selection.get("social_read_limit", 5))]
+        state.read_attempted_count = len(selected)
+        per_document_limit = max(
+            3_000,
+            self.config.SEARCH_CONTENT_MAX_LENGTH // max(len(selected), 1),
         )
-        results = [
-            {
-                "title": result.title,
-                "url": result.url,
-                "published_date": result.published_date,
-                "source": result.source,
-                "content": result.content,
-                "score": result.score,
-            }
-            for result in response.results
-        ]
-        return query, results
-
-    def _initial_search_and_summary(self, paragraph_index: int) -> None:
-        paragraph = self.state.paragraphs[paragraph_index]
-        plan = self.first_search_node.run(
-            {
-                "research_question": self.state.query,
-                "title": paragraph.title,
-                "content": paragraph.content,
-            }
-        )
-        query, results = self._search(plan)
-        paragraph.research.add_search_results(query, results)
-        paragraph.research.latest_summary = self.first_summary_node.run(
-            {
-                "research_question": self.state.query,
-                "title": paragraph.title,
-                "content": paragraph.content,
-                "search_query": query,
-                "search_results": format_search_results_for_prompt(
-                    results, self.config.SEARCH_CONTENT_MAX_LENGTH
-                ),
-            }
-        )
-        self.state.touch()
-
-    def _reflection_loop(self, paragraph_index: int) -> None:
-        paragraph = self.state.paragraphs[paragraph_index]
-        for _ in range(self.config.MAX_REFLECTIONS):
-            plan = self.reflection_node.run(
-                {
-                    "research_question": self.state.query,
-                    "title": paragraph.title,
-                    "content": paragraph.content,
-                    "paragraph_latest_state": paragraph.research.latest_summary,
-                }
+        for index, candidate in enumerate(selected, 1):
+            self._progress(
+                f"  [{index}/{len(selected)}] 读取：{candidate.source_name}｜"
+                f"{candidate.title[:50]}"
             )
-            query, results = self._search(plan)
-            paragraph.research.add_search_results(query, results)
-            paragraph.research.latest_summary = self.reflection_summary_node.run(
-                {
-                    "research_question": self.state.query,
-                    "title": paragraph.title,
-                    "content": paragraph.content,
-                    "search_query": query,
-                    "search_results": format_search_results_for_prompt(
-                        results, self.config.SEARCH_CONTENT_MAX_LENGTH
-                    ),
-                    "paragraph_latest_state": paragraph.research.latest_summary,
-                }
+            try:
+                result = self.reader.read(candidate.url)
+                state.selected_documents.append(MediaDocument(
+                    candidate=candidate,
+                    final_url=result.final_url,
+                    fetched_at=result.fetched_at,
+                    content_type=result.content_type,
+                    content=result.content[:per_document_limit],
+                ))
+            except Exception as exc:
+                self._progress(f"正文跳过：{candidate.title}（{exc}）")
+        state.read_success_count = len(state.selected_documents)
+        if not state.selected_documents:
+            raise ValueError("没有成功读取的正文")
+
+        self._progress(
+            f"③ 正文读取成功 {state.read_success_count}/{state.read_attempted_count}，"
+            "正在复核相关性……"
+        )
+        state.content_decisions = self.candidate_filter_node.run({
+            "stage": "content",
+            "topic": state.topic,
+            "queries": state.media_queries,
+            "documents": state.selected_documents,
+            "max_content_chars": int(selection.get("content_filter_max_chars", 3_000)),
+            "model_min_score": int(selection.get("relevance_model_min_score", 60)),
+        })
+        relevant_documents = [
+            document
+            for document, decision in zip(
+                state.selected_documents, state.content_decisions
             )
-            paragraph.research.reflection_iteration += 1
-            self.state.touch()
+            if decision.relevant
+        ]
+        for decision in state.content_decisions:
+            if not decision.relevant:
+                self._progress(
+                    f"正文拒绝：{decision.candidate.title}（{decision.reason}）"
+                )
+        self._progress(
+            f"④ 正文高相关 {len(relevant_documents)}/{state.read_success_count}"
+        )
+        if not relevant_documents:
+            raise ValueError("没有通过正文相关性复核的文章")
 
-    def _report_input(self) -> dict:
-        return {
-            "report_title": self.state.report_title,
-            "research_question": self.state.query,
-            "data_cutoff": self.state.data_cutoff,
-            "paragraphs": [
-                {"title": item.title, "content": item.research.latest_summary}
-                for item in self.state.paragraphs
-            ],
-            "sources": [
-                {
-                    "title": source.title,
-                    "source": source.source,
-                    "published_date": source.published_date,
-                    "url": source.url,
-                }
-                for source in self.state.source_list()
-            ],
-        }
-
-    def _generate_final_report(self) -> str:
-        report_input = self._report_input()
-        try:
-            body = self.formatting_node.run(report_input)
-        except Exception as exc:
-            logger.warning("最终格式化失败，使用确定性模板：{}", exc)
-            body = self.formatting_node.format_manually(report_input)
-        report = self._ensure_required_sections(body, report_input)
-        self.state.final_report = report
-        self.state.is_completed = True
-        self.state.touch()
-        return report
+        state.insights = self.media_node.run(relevant_documents)
+        media_insights = [
+            asdict(item) for item in state.insights
+            if item.source_group != "social_media"
+        ]
+        social_insights = [
+            asdict(item) for item in state.insights
+            if item.source_group == "social_media"
+        ]
+        state.brief = self.brief_node.run({
+            "topic": state.topic,
+            "official_documents": [],
+            "media_insights": media_insights,
+            "social_insights": social_insights,
+        })
+        return state
 
     @staticmethod
-    def _ensure_required_sections(body: str, report_input: dict) -> str:
-        lines = [body.strip()]
-        if "数据截止时间" not in body:
-            lines.extend(["", f"> 数据截止时间：{report_input['data_cutoff']}"])
-        if "## 来源列表" not in body:
-            lines.extend(["", "## 来源列表", ""])
-            if report_input["sources"]:
-                for index, source in enumerate(report_input["sources"], 1):
-                    date = source["published_date"] or "发布日期未知"
-                    origin = source["source"] or "来源未知"
-                    lines.append(
-                        f"{index}. [{source['title'] or origin}]"
-                        f"({source['url']}) — {origin}，{date}"
-                    )
-            else:
-                lines.append("- 本次搜索未返回可用来源。")
-        if "## 风险与局限" not in body:
-            lines.extend(
-                [
-                    "",
-                    "## 风险与局限",
-                    "",
-                    "本报告仅基于数据截止时间前可检索的公开网页资料，"
-                    "未接入实时行情或结构化金融数据库，信息可能存在遗漏或时滞。",
-                ]
-            )
-        if "## 免责声明" not in body:
-            lines.extend(
-                ["", "## 免责声明", "", "本报告仅供信息研究，不构成任何投资建议。"]
-            )
-        return "\n".join(lines).strip() + "\n"
-
-    def _save_report(self, report: str) -> Path:
-        output_dir = resolve_output_dir(self.config.OUTPUT_DIR)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safe_query = re.sub(r"[^\w\u4e00-\u9fff-]+", "_", self.state.query)[:40]
-        report_path = output_dir / f"financial_report_{safe_query}_{timestamp}.md"
-        report_path.write_text(report, encoding="utf-8")
-        if self.config.SAVE_INTERMEDIATE_STATES:
-            self.state.save_to_file(output_dir / f"state_{safe_query}_{timestamp}.json")
-        logger.info("报告已保存：{}", report_path)
-        return report_path
-
-    def _save_fact_state(self) -> Path:
-        output_dir = resolve_output_dir(self.config.OUTPUT_DIR)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        state_path = output_dir / f"fact_state_{timestamp}.json"
-        self.state.save_to_file(state_path)
-        logger.info("事实状态已保存：{}", state_path)
-        return state_path
+    def save_brief(brief: str, output_dir: Path | None = None) -> Path:
+        directory = output_dir or PROJECT_ROOT / "reports"
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / f"topic_brief_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+        path.write_text(brief.strip() + "\n", encoding="utf-8")
+        return path

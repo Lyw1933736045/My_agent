@@ -5,7 +5,6 @@ from __future__ import annotations
 from urllib.parse import urlparse
 
 from .media_models import MediaCandidate
-from .newsnow_provider import filter_media_candidates
 from .search import TavilySearchAgency
 
 
@@ -86,8 +85,9 @@ class TavilyMediaProvider:
                         published_at=item.published_date,
                         # snippet 只用于本地关键词打分，简报仍会重新抓取正文。
                         snippet=" ".join((item.content or "").split())[:500],
-                        discovered_by="tavily",
+                        discovered_by=("tavily",),
                         source_group=_source_group_for_url(url),
+                        query=query,
                     )
                 )
-        return filter_media_candidates(candidates, queries, limit=limit)
+        return candidates

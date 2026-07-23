@@ -21,16 +21,17 @@ class _SequenceLLM:
 
 
 class QueryPlanNodeTests(unittest.TestCase):
-    def test_limits_queries_to_three_and_deduplicates(self):
+    def test_limits_media_queries_to_five_and_deduplicates(self):
         node = QueryPlanNode(
             _FakeLLM(
                 {
                     "topic": "新能源汽车支持政策",
-                    "search_queries": [
+                    "media_queries": [
                         "新能源汽车 税收优惠",
                         "新能源汽车 税收优惠",
                         "新能源汽车 购置税",
                         "新能源汽车 消费支持",
+                        "新能源汽车 市场",
                         "不应保留",
                     ],
                 }
@@ -38,29 +39,29 @@ class QueryPlanNodeTests(unittest.TestCase):
         )
         result = node.run({"query": "国务院有哪些新能源汽车支持政策？"})
         self.assertEqual(result["topic"], "新能源汽车支持政策")
-        self.assertEqual(len(result["search_queries"]), 3)
+        self.assertEqual(len(result["media_queries"]), 5)
         self.assertEqual(
-            result["search_queries"],
+            result["media_queries"],
             [
                 "新能源汽车 税收优惠",
                 "新能源汽车 购置税",
                 "新能源汽车 消费支持",
+                "新能源汽车 市场",
+                "不应保留",
             ],
         )
-        self.assertEqual(result["official_queries"], result["search_queries"])
-        self.assertEqual(result["media_queries"], result["search_queries"])
 
-    def test_returns_separate_official_and_media_queries(self):
+    def test_returns_only_media_queries(self):
         result = QueryPlanNode(
             _FakeLLM(
                 {
                     "topic": "新能源汽车政策影响",
-                    "official_queries": ["新能源汽车 购置税"],
                     "media_queries": ["新能源车 政策影响", "车企 消费"],
                 }
             )
         ).run({"query": "新能源汽车政策有什么影响？"})
-        self.assertEqual(result["search_queries"], ["新能源汽车 购置税"])
+        self.assertNotIn("official_queries", result)
+        self.assertNotIn("search_queries", result)
         self.assertEqual(len(result["media_queries"]), 2)
 
     def test_accepts_single_item_array_wrapper(self):
@@ -68,7 +69,6 @@ class QueryPlanNodeTests(unittest.TestCase):
             _FakeLLM(
                 [{
                     "topic": "降准影响",
-                    "official_queries": ["降准 货币政策"],
                     "media_queries": ["央行 降准"],
                 }]
             )
@@ -80,7 +80,6 @@ class QueryPlanNodeTests(unittest.TestCase):
             _FakeLLM(
                 {"result": {
                     "topic": "降准影响",
-                    "official_queries": ["降准 货币政策"],
                     "media_queries": ["央行 降准"],
                 }}
             )
@@ -89,7 +88,7 @@ class QueryPlanNodeTests(unittest.TestCase):
 
     def test_prefers_fenced_json_over_explanation_brackets(self):
         response = """分析步骤：[不要解析这个数组]\n```json
-        {"topic":"降准影响","official_queries":["降准"],"media_queries":["央行 降准"]}
+        {"topic":"降准影响","media_queries":["央行 降准"]}
         ```"""
         result = QueryPlanNode(_SequenceLLM([response])).run(
             {"query": "降准有什么影响？"}
@@ -100,7 +99,6 @@ class QueryPlanNodeTests(unittest.TestCase):
         repaired = json.dumps(
             {
                 "topic": "降准影响",
-                "official_queries": ["降准"],
                 "media_queries": ["央行 降准"],
             },
             ensure_ascii=False,
@@ -108,7 +106,7 @@ class QueryPlanNodeTests(unittest.TestCase):
         result = QueryPlanNode(_SequenceLLM(["not json", repaired])).run(
             {"query": "降准有什么影响？"}
         )
-        self.assertEqual(result["official_queries"], ["降准"])
+        self.assertEqual(result["media_queries"], ["央行 降准"])
 
     def test_rejects_empty_query(self):
         with self.assertRaisesRegex(ValueError, "不能为空"):

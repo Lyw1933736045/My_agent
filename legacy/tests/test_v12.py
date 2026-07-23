@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 from My_agent import cli
 from My_agent.agent import PROJECT_ROOT, resolve_output_dir
-from My_agent.discovery import StateCouncilDiscovery
+from My_agent.legacy.official.discovery import StateCouncilDiscovery
 from My_agent.state import EventFact, State
 from My_agent.storage import Database
 from My_agent.utils.official_sources import SourceVerification
@@ -170,20 +170,6 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(self.discovery.parse(html), [])
 
 
-class _FakeAgent:
-    def verify_official_url(self, url):
-        return SourceVerification(
-            url=url,
-            source_id="state_council",
-            source_name="国务院政策文件库",
-            verification_status="verified",
-            verification_message="URL 匹配国务院政策文件库",
-        )
-
-    def research_official_url(self, url, save_state=True):
-        return State(query=url, event_fact=EventFact(title="测试政策")), None
-
-
 class CliCompatibilityTests(unittest.TestCase):
     def test_relative_output_dir_is_anchored_inside_my_agent(self):
         self.assertEqual(resolve_output_dir("reports"), PROJECT_ROOT / "reports")
@@ -192,72 +178,13 @@ class CliCompatibilityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "My_agent"):
             resolve_output_dir(str(PROJECT_ROOT.parent / "outside-reports"))
 
-    def test_legacy_url_arguments_are_preserved(self):
-        args = cli.parse_args(["https://www.gov.cn/test.htm", "--no-save"])
-        self.assertEqual(args.command, "url")
-        self.assertEqual(args.official_url, "https://www.gov.cn/test.htm")
-        self.assertTrue(args.no_save)
+    def test_cli_only_exposes_media_flows(self):
+        self.assertEqual(cli.COMMANDS, {"media-search", "topic-brief"})
 
-    @patch("My_agent.cli._create_agent", return_value=_FakeAgent())
-    def test_manual_url_still_invokes_existing_flow(self, _mocked_create):
-        output = io.StringIO()
-        with redirect_stdout(output):
-            exit_code = cli.main(
-                ["https://www.gov.cn/zhengce/content/test.htm", "--no-save"]
-            )
-
-        self.assertEqual(exit_code, 0)
-        self.assertIn('"event_fact"', output.getvalue())
-        self.assertIn("测试政策", output.getvalue())
-
-
-class ExtractCliTests(unittest.TestCase):
-    def setUp(self):
-        self.url = "https://www.gov.cn/zhengce/content/test.htm"
-        self.document = SimpleNamespace(
-            id=5,
-            title="测试候选政策",
-            url=self.url,
-            status="pending",
-        )
-        self.database = MagicMock()
-        self.database.get_document.return_value = self.document
-        self.agent = MagicMock()
-        self.agent.research_official_url.return_value = (
-            State(query=self.url, event_fact=EventFact(title="已提取政策")),
-            Path("/tmp/fact_state.json"),
-        )
-
-    def _run_extract(self):
-        output = io.StringIO()
-        with (
-            patch("My_agent.storage.Database", return_value=self.database),
-            patch("My_agent.cli._create_agent", return_value=self.agent),
-            redirect_stdout(output),
-        ):
-            exit_code = cli.main(["extract", "--id", "5"])
-        return exit_code, output.getvalue()
-
-    def test_extract_gets_candidate_url_by_id(self):
-        exit_code, _ = self._run_extract()
-        self.assertEqual(exit_code, 0)
-        self.database.get_document.assert_called_once_with(5)
-
-    def test_extract_calls_existing_research_flow(self):
-        self._run_extract()
-        self.agent.research_official_url.assert_called_once_with(
-            self.url, save_state=True
-        )
-
-    def test_extract_prints_event_fact(self):
-        _, output = self._run_extract()
-        self.assertIn("提取结果", output)
-        self.assertIn("已提取政策", output)
-
-    def test_extract_does_not_write_database_or_update_status(self):
-        self._run_extract()
-        self.database.save_event_fact.assert_not_called()
-        self.database.update_status.assert_not_called()
+    def test_media_search_arguments(self):
+        args = cli.parse_args(["media-search", "--query", "央行政策"])
+        self.assertEqual(args.command, "media-search")
+        self.assertEqual(args.query, "央行政策")
 
 
 if __name__ == "__main__":

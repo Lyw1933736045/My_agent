@@ -5,7 +5,7 @@ from typing import Any, Optional
 
 from .base_node import BaseNode
 from ..prompts import SYSTEM_PROMPT_MEDIA_ANALYSIS
-from ..state import MediaDocument, MediaInsight
+from ..tools.media_models import MediaDocument, MediaInsight
 from ..utils.text_processing import extract_json
 
 

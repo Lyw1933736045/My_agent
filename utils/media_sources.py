@@ -34,7 +34,6 @@ def load_media_sources(config_path: str | Path = DEFAULT_CONFIG_PATH) -> dict:
         raise MediaSourcesConfigError(f"无法读取媒体来源配置：{exc}") from exc
 
     root = _mapping(raw, "root")
-    official = _mapping(root.get("official", {}), "official")
     newsnow = _mapping(root.get("newsnow"), "newsnow")
     rss = _mapping(root.get("rss"), "rss")
     tavily = _mapping(root.get("tavily", {"enabled": False}), "tavily")
@@ -49,18 +48,6 @@ def load_media_sources(config_path: str | Path = DEFAULT_CONFIG_PATH) -> dict:
             )
     if not isinstance(rss.get("feeds"), list):
         raise MediaSourcesConfigError("配置字段 rss.feeds 必须是列表")
-    if not isinstance(rss.get("official_feeds", []), list):
-        raise MediaSourcesConfigError("配置字段 rss.official_feeds 必须是列表")
-    for feed in rss.get("official_feeds", []):
-        if (
-            not isinstance(feed, dict)
-            or feed.get("layer") != "fact"
-            or feed.get("source_group") != "official_source"
-        ):
-            raise MediaSourcesConfigError(
-                "rss.official_feeds 每项必须配置 layer=fact 和 "
-                "source_group=official_source"
-            )
     rss_media_groups = {"official_media", "news_media", "social_media"}
     for feed in rss["feeds"]:
         if (
@@ -75,7 +62,6 @@ def load_media_sources(config_path: str | Path = DEFAULT_CONFIG_PATH) -> dict:
     if "enabled" in tavily and not isinstance(tavily.get("enabled"), bool):
         raise MediaSourcesConfigError("配置字段 tavily.enabled 必须是布尔值")
     return {
-        "official": official,
         "newsnow": newsnow,
         "rss": rss,
         "tavily": tavily,

@@ -11,7 +11,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
-from ..utils.official_sources import OfficialSourcesRegistry, UnsafeOfficialUrlError
+from .official_sources import OfficialSourcesRegistry, UnsafeOfficialUrlError
 
 
 OFFICIAL_SEARCH_API = "https://sousuo.www.gov.cn/search-gov/data"

@@ -16,6 +16,7 @@ dependencies = [
   "python-dotenv>=1.0.0",
   "loguru>=0.7.0",
   "PyYAML>=6.0",
+  "requests>=2.31.0",
   "json-repair>=0.58.6",
 ]
 

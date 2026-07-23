@@ -1,14 +1,14 @@
 version: 1
 
-# 暂时关闭官方检索支路；保留原有配置，之后可直接重新开启。
-official:
-  enabled: false
-
 # NewsNow 提供各平台当前热榜；查询词会在本地匹配标题。
 newsnow:
   enabled: true
   api_url: "https://newsnow.busiyi.world/api/s"
-  timeout_seconds: 10
+  timeout_seconds: 30
+  max_retries: 1
+  retry_wait_min_seconds: 2
+  retry_wait_max_seconds: 3
+  request_interval_seconds: 0.5
 
   sources:
     - id: "wallstreetcn-hot"
@@ -74,12 +74,16 @@ newsnow:
 # RSS 用于补充不一定进入热榜的最新媒体文章。
 rss:
   enabled: true
-  timeout_seconds: 15
+  timeout_seconds: 25
   max_content_bytes: 6000000
   max_age_days: 30
-  # 暂无官方政策文件 RSS；媒体侧权威源见下方 official_media。
-  official_feeds: []
-
+  default_max_items: 0
+  request_interval_min_seconds: 0.5
+  request_interval_max_seconds: 1.0
+  max_retries: 1
+  retry_wait_min_seconds: 2
+  retry_wait_max_seconds: 3
+  # 每个 feed 可选配置 max_items 和 max_age_days；0 表示不限制。
   feeds:
     # =========================
     # 官方及权威媒体
@@ -198,7 +202,7 @@ rss:
       source_group: "news_media"
       enabled: false
 
-# Tavily 与 NewsNow/RSS 并行，只用于发现 URL；简报仍重新抓取正文。
+# Tavily 在 NewsNow、RSS 完成后执行，只用于发现 URL；简报仍重新抓取正文。
 tavily:
   enabled: true
   max_results_per_query: 5
@@ -210,3 +214,5 @@ selection:
   read_limit: 8
   social_read_limit: 5
   max_per_source: 3
+  relevance_model_min_score: 60
+  content_filter_max_chars: 3000

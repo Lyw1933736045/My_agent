@@ -68,6 +68,37 @@ class FinancialMediaAgentTests(unittest.TestCase):
         self.agent._build_providers.assert_called_once()
         discovery_cls.return_value.run.assert_called_once()
 
+    def test_create_plan_does_not_call_providers(self):
+        self.agent.query_plan_node.run = MagicMock(return_value={
+            "topic": "央行降准", "media_queries": ["央行 降准"],
+        })
+        self.agent._build_providers = MagicMock()
+
+        state = self.agent.create_plan("央行降准")
+
+        self.assertEqual(state.topic, "央行降准")
+        self.assertEqual(state.media_queries, ["央行 降准"])
+        self.assertIsNone(state.discovery)
+        self.agent._build_providers.assert_not_called()
+
+    @patch("My_agent.agent.load_media_sources", side_effect=_media_config)
+    @patch("My_agent.agent.MediaDiscovery")
+    def test_discover_from_plan_uses_approved_queries(self, discovery_cls, _config):
+        state = RunState(
+            query="央行降准",
+            topic="央行降准",
+            media_queries=["  央行   降准  ", "央行 降准", "债券 市场"],
+        )
+        self.agent._build_providers = MagicMock(return_value={"rss": object()})
+        discovery_cls.return_value.run.return_value = DiscoveryResult(
+            [self.candidate], {"selected_count": 1}, {}
+        )
+
+        result = self.agent.discover_from_plan(state)
+
+        self.assertEqual(result.media_queries, ["央行 降准", "债券 市场"])
+        discovery_cls.return_value.run.assert_called_once()
+
     @patch("My_agent.agent.load_media_sources", side_effect=_media_config)
     def test_run_updates_state_through_filter_extract_and_brief(self, _config):
         state = RunState(

@@ -214,5 +214,5 @@ selection:
   read_limit: 8
   social_read_limit: 5
   max_per_source: 3
-  relevance_model_min_score: 60
-  content_filter_max_chars: 3000
+  relevance_model_min_score: 30
+  content_filter_max_chars: 5000

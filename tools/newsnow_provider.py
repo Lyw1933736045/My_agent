@@ -17,14 +17,14 @@ from .media_models import MediaCandidate, ProviderDiagnostics
 class NewsNowProvider:
     DEFAULT_HEADERS = {
         "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/91.0.4472.124 Safari/537.36"
+            "Chrome/150.0.0.0 Safari/537.36"
         ),
-        "Accept": "application/json, text/plain, */*",
+        "Accept": "application/json,text/plain,*/*",
+        "Referer": "https://newsnow.busiyi.world/",
+        "Origin": "https://newsnow.busiyi.world",
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-        "Connection": "keep-alive",
-        "Cache-Control": "no-cache",
     }
 
     def __init__(
@@ -48,7 +48,13 @@ class NewsNowProvider:
 
     def fetch_json(self, source_id: str) -> dict[str, Any]:
         url = self.api_url + "?" + urlencode({"id": source_id}) + "&latest"
-        request = Request(url, headers=dict(self.DEFAULT_HEADERS))
+        headers = dict(self.DEFAULT_HEADERS)
+        parsed = urlparse(self.api_url)
+        if parsed.scheme and parsed.netloc:
+            origin = f"{parsed.scheme}://{parsed.netloc}"
+            headers["Referer"] = f"{origin}/"
+            headers["Origin"] = origin
+        request = Request(url, headers=headers)
         try:
             with urlopen(request, timeout=self.timeout) as response:
                 raw = response.read().decode(
@@ -117,9 +123,8 @@ class NewsNowProvider:
             if payload is not None:
                 status = str(payload["status"])
                 self.diagnostics.status_counts[status] += 1
-                if progress:
-                    progress(f"    NewsNow 成功：{name}（{status}）")
                 items = payload.get("items")
+                item_count = 0
                 if isinstance(items, list):
                     for item in items:
                         if not isinstance(item, dict):
@@ -135,6 +140,7 @@ class NewsNowProvider:
                             )
                         ):
                             continue
+                        item_count += 1
                         candidates.append(MediaCandidate(
                             title=" ".join(title.split()),
                             url=url.strip(),
@@ -143,6 +149,11 @@ class NewsNowProvider:
                             discovered_by=("newsnow",),
                             source_group=str(source.get("source_group", "news_media")),
                         ))
+                self.diagnostics.successful_sources[name] = (
+                    f"{status}，{item_count} 条"
+                )
+                if progress:
+                    progress(f"    NewsNow 成功：{name}（{status}）")
             if index < total and self.request_interval:
                 time.sleep(self.request_interval)
         return candidates

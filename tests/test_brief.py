@@ -40,6 +40,7 @@ class BriefNodeTests(unittest.TestCase):
         payload = json.loads(llm.user_prompt)
         self.assertNotIn("content", payload["documents"][0])
         self.assertNotIn("search_summary", payload["documents"][0])
+        self.assertTrue(brief.startswith("# 新能源汽车政策"))
         self.assertIn("https://www.gov.cn/policy.htm", brief)
 
     def test_rejects_web_content_or_search_summary(self):

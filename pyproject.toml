@@ -18,10 +18,14 @@ dependencies = [
   "PyYAML>=6.0",
   "requests>=2.31.0",
   "json-repair>=0.58.6",
+  "fastapi>=0.115.0",
+  "uvicorn>=0.30.0",
+  "markdown-it-py>=3.0.0",
 ]
 
 [project.scripts]
 financial-single-agent = "financial_single_agent.cli:main"
+financial-single-agent-api = "financial_single_agent.api:main"
 
 [tool.setuptools]
 packages = [
@@ -36,4 +40,4 @@ packages = [
 package-dir = {financial_single_agent = "."}
 
 [tool.setuptools.package-data]
-financial_single_agent = ["config/*.yaml"]
+financial_single_agent = ["config/*.yaml", "web/*"]

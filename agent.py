@@ -18,6 +18,7 @@ from .tools import (
     TavilyMediaProvider,
     WebReader,
 )
+from .tools.text_chunking import select_chunks, split_text
 from .utils.config import PROJECT_ROOT, Settings
 from .utils.media_sources import (
     MediaSourcesConfigError,
@@ -120,16 +121,38 @@ class FinancialMediaAgent:
         return providers
 
     def discover(self, query: str, limit: int | None = None) -> RunState:
+        state = self.create_plan(query)
+        return self.discover_from_plan(state, limit)
+
+    def create_plan(self, query: str) -> RunState:
+        """生成检索计划，但不调用任何媒体 Provider。"""
         query = query.strip()
         if not query:
             raise ValueError("研究主题不能为空")
         state = RunState(query=query)
-        media_config = load_media_sources()
         self._progress("① 正在规划媒体检索词……")
         plan = self.query_plan_node.run({"query": query})
         state.topic = plan["topic"]
         state.media_queries = plan["media_queries"]
+        return state
 
+    def discover_from_plan(
+        self,
+        state: RunState,
+        limit: int | None = None,
+    ) -> RunState:
+        """使用已经审核的检索计划执行媒体发现。"""
+        if not state.topic.strip():
+            raise ValueError("检索计划缺少研究主题")
+        state.media_queries = [
+            " ".join(query.split())
+            for query in state.media_queries
+            if isinstance(query, str) and query.strip()
+        ]
+        state.media_queries = list(dict.fromkeys(state.media_queries))
+        if not state.media_queries:
+            raise ValueError("检索计划至少需要一个检索词")
+        media_config = load_media_sources()
         providers = self._build_providers(media_config)
         if not providers:
             raise ValueError("没有可用的媒体 Provider")
@@ -146,6 +169,21 @@ class FinancialMediaAgent:
 
     def run(self, query: str, limit: int | None = None) -> RunState:
         state = self.discover(query, limit)
+        return self.complete(state)
+
+    def run_from_plan(
+        self,
+        state: RunState,
+        limit: int | None = None,
+    ) -> RunState:
+        """从人工审核后的计划继续执行完整研究。"""
+        state = self.discover_from_plan(state, limit)
+        return self.complete(state)
+
+    def complete(self, state: RunState) -> RunState:
+        """基于媒体发现结果读取正文、分析并生成简报。"""
+        if state.discovery is None:
+            raise ValueError("尚未完成媒体发现")
         media_config = load_media_sources()
         selection = media_config["selection"]
         candidates = state.discovery.candidates if state.discovery else []
@@ -154,10 +192,6 @@ class FinancialMediaAgent:
         selected = news[: int(selection.get("read_limit", 8))]
         selected += social[: int(selection.get("social_read_limit", 5))]
         state.read_attempted_count = len(selected)
-        per_document_limit = max(
-            3_000,
-            self.config.SEARCH_CONTENT_MAX_LENGTH // max(len(selected), 1),
-        )
         for index, candidate in enumerate(selected, 1):
             self._progress(
                 f"  [{index}/{len(selected)}] 读取：{candidate.source_name}｜"
@@ -165,12 +199,19 @@ class FinancialMediaAgent:
             )
             try:
                 result = self.reader.read(candidate.url)
+                chunks = split_text(result.content)
+                selected_chunks = select_chunks(
+                    chunks,
+                    topic=state.topic,
+                    queries=state.media_queries,
+                    top_k=3,
+                )
                 state.selected_documents.append(MediaDocument(
                     candidate=candidate,
                     final_url=result.final_url,
                     fetched_at=result.fetched_at,
                     content_type=result.content_type,
-                    content=result.content[:per_document_limit],
+                    content="\n\n".join(selected_chunks),
                 ))
             except Exception as exc:
                 self._progress(f"正文跳过：{candidate.title}（{exc}）")
@@ -218,6 +259,7 @@ class FinancialMediaAgent:
             if item.source_group == "social_media"
         ]
         state.brief = self.brief_node.run({
+            "query": state.query,
             "topic": state.topic,
             "official_documents": [],
             "media_insights": media_insights,

@@ -144,6 +144,10 @@ class NewsNowProviderTests(unittest.TestCase):
         self.assertEqual(
             provider.diagnostics.status_counts, {"success": 1, "cache": 1}
         )
+        self.assertEqual(
+            provider.diagnostics.successful_sources,
+            {"媒体A": "success，0 条", "媒体B": "cache，0 条"},
+        )
 
     def test_parses_and_rejects_wrong_domain_without_relevance_filtering(self):
         provider = NewsNowProvider(
@@ -357,8 +361,13 @@ class MediaDiscoveryTests(unittest.TestCase):
         )
         self.assertEqual(result.errors["newsnow/媒体A"], "请求超时")
         self.assertEqual(result.stats["newsnow_failed_sources"], 1)
+        self.assertEqual(result.stats["newsnow_successful_sources"], 0)
         self.assertEqual(result.stats["newsnow_success_responses"], 2)
         self.assertEqual(result.stats["newsnow_cache_responses"], 1)
+        self.assertEqual(
+            [(item.provider, item.name, item.ok) for item in result.sources],
+            [("newsnow", "媒体A", False)],
+        )
 
     def test_runs_providers_in_configured_order(self):
         calls = []

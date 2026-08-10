@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-from .media_models import MediaCandidate
+from .media_models import MediaCandidate, ProviderDiagnostics
 from .search import TavilySearchAgency
 
 
@@ -51,6 +51,7 @@ class TavilyMediaProvider:
         depth = (search_depth or "basic").strip().lower()
         self.search_depth = depth if depth in {"basic", "advanced"} else "basic"
         self.days = days
+        self.diagnostics = ProviderDiagnostics()
 
     def search(
         self,
@@ -60,17 +61,26 @@ class TavilyMediaProvider:
     ) -> list[MediaCandidate]:
         if limit < 1:
             raise ValueError("limit 必须是正整数")
+        self.diagnostics = ProviderDiagnostics()
         candidates: list[MediaCandidate] = []
         total = len(queries)
         for index, query in enumerate(queries, 1):
+            label = f"检索词：{query}"
             if progress:
                 progress(f"  [{index}/{total}] Tavily：{query}")
-            response = self.agency.search(
-                query=query,
-                max_results=self.max_results_per_query,
-                search_depth=self.search_depth,
-                days=self.days,
-            )
+            try:
+                response = self.agency.search(
+                    query=query,
+                    max_results=self.max_results_per_query,
+                    search_depth=self.search_depth,
+                    days=self.days,
+                )
+            except Exception as exc:
+                self.diagnostics.failed_sources[label] = str(exc)
+                if progress:
+                    progress(f"    Tavily 失败：{query}（{exc}）")
+                continue
+            before = len(candidates)
             for item in response.results:
                 title = " ".join((item.title or "").split())
                 url = (item.url or "").strip()
@@ -90,4 +100,8 @@ class TavilyMediaProvider:
                         query=query,
                     )
                 )
+            added = len(candidates) - before
+            self.diagnostics.successful_sources[label] = f"{added} 条"
+            if progress:
+                progress(f"    Tavily 成功：{query}（{added} 条）")
         return candidates

@@ -211,6 +211,7 @@ class RSSProvider:
                 try:
                     items = self.parse(raw, feed)
                     candidates.extend(items)
+                    self.diagnostics.successful_sources[name] = f"{len(items)} 条"
                     if progress:
                         progress(f"    RSS 成功：{name}（{len(items)} 条）")
                 except ValueError as exc:

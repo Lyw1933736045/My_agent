@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from .media_models import DiscoveryResult, MediaCandidate
+from .media_models import DiscoveryResult, MediaCandidate, SourceFetchResult
 from ..utils.dedup import select_candidates
 
 
@@ -28,6 +28,7 @@ class MediaDiscovery:
 
         raw: list[MediaCandidate] = []
         errors: dict[str, str] = {}
+        sources: list[SourceFetchResult] = []
         counts = {name: 0 for name in self.providers}
         provider_stats: dict[str, int] = {}
         for name, provider in self.providers.items():
@@ -43,17 +44,54 @@ class MediaDiscovery:
                 raw.extend(items)
                 diagnostics = getattr(provider, "diagnostics", None)
                 if diagnostics is not None:
+                    for source, detail in diagnostics.successful_sources.items():
+                        sources.append(
+                            SourceFetchResult(
+                                provider=name,
+                                name=source,
+                                ok=True,
+                                detail=detail,
+                            )
+                        )
                     for source, error in diagnostics.failed_sources.items():
                         errors[f"{name}/{source}"] = error
+                        sources.append(
+                            SourceFetchResult(
+                                provider=name,
+                                name=source,
+                                ok=False,
+                                detail=error,
+                            )
+                        )
                     provider_stats[f"{name}_failed_sources"] = len(
                         diagnostics.failed_sources
                     )
+                    provider_stats[f"{name}_successful_sources"] = len(
+                        diagnostics.successful_sources
+                    )
                     for status, count in diagnostics.status_counts.items():
                         provider_stats[f"{name}_{status}_responses"] = count
+                elif items:
+                    sources.append(
+                        SourceFetchResult(
+                            provider=name,
+                            name=name,
+                            ok=True,
+                            detail=f"{len(items)} 条",
+                        )
+                    )
                 if progress:
                     progress(f"{name} 完成：{len(items)} 条")
             except Exception as exc:
                 errors[name] = str(exc)
+                sources.append(
+                    SourceFetchResult(
+                        provider=name,
+                        name=name,
+                        ok=False,
+                        detail=str(exc),
+                    )
+                )
                 if progress:
                     progress(f"{name} 失败：{exc}")
 
@@ -98,4 +136,4 @@ class MediaDiscovery:
             **dedup_stats,
             "selected_count": len(selected),
         }
-        return DiscoveryResult(selected, stats, errors)
+        return DiscoveryResult(selected, stats, errors, tuple(sources))

@@ -21,7 +21,16 @@ class MediaCandidate:
 @dataclass
 class ProviderDiagnostics:
     failed_sources: dict[str, str] = field(default_factory=dict)
+    successful_sources: dict[str, str] = field(default_factory=dict)
     status_counts: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class SourceFetchResult:
+    provider: str
+    name: str
+    ok: bool
+    detail: str = ""
 
 
 @dataclass(frozen=True)
@@ -29,6 +38,7 @@ class DiscoveryResult:
     candidates: list[MediaCandidate]
     stats: dict[str, int]
     errors: dict[str, str] = field(default_factory=dict)
+    sources: tuple[SourceFetchResult, ...] = ()
 
 
 @dataclass(frozen=True)

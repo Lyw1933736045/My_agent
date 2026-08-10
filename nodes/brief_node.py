@@ -28,6 +28,10 @@ class BriefNode(BaseNode):
             if "content" in insight or "search_summary" in insight:
                 raise ValueError("BriefNode 不接收网页正文或搜索摘要")
 
+        query = str(input_data.get("query") or input_data.get("topic") or "").strip()
+        query = " ".join(query.splitlines())
+        if not query:
+            raise ValueError("BriefNode 缺少报告标题")
         payload = dict(input_data)
         payload["official_documents"] = documents
         payload["media_insights"] = media_insights
@@ -40,6 +44,17 @@ class BriefNode(BaseNode):
         brief = clean_markdown_tags(response)
         if not brief:
             raise ValueError("LLM 未返回简报")
+        lines = brief.splitlines()
+        first_content_index = next(
+            (index for index, line in enumerate(lines) if line.strip()),
+            None,
+        )
+        title = f"# {query}"
+        if first_content_index is not None and lines[first_content_index].startswith("# "):
+            lines[first_content_index] = title
+        else:
+            lines = [title, "", *lines]
+        brief = "\n".join(lines)
         missing_sources = [
             document
             for document in documents

@@ -31,6 +31,32 @@ python3 -m financial_single_agent.cli "要研究的金融事件"
 本工具不接入实时行情或结构化财务数据库，结果仅基于搜索时可获得的公开资料，
 不构成投资建议。
 
+## FastAPI 与前端
+
+安装项目后启动 API：
+
+```bash
+financial-single-agent-api
+```
+
+浏览器打开 `http://127.0.0.1:8000/` 使用前端：
+
+1. 输入自然语言问题，点击「生成简报」。
+2. 默认自动批准推荐检索词并开始聚合；需要改词时展开「高级：审核检索词」。
+3. 页面轮询任务进度，完成后展示 Markdown 简报，也可打开排版页。
+
+API 文档仍在 `http://127.0.0.1:8000/docs`。按下面顺序也可直接调用接口：
+
+1. `POST /api/v1/plans`：提交研究问题，生成待审核检索词。
+2. `POST /api/v1/plans/{run_id}/approve`：修改并批准检索词，启动后台研究。
+3. `GET /api/v1/runs/{run_id}`：查询进度和执行结果。
+4. `GET /api/v1/runs/{run_id}/report`：获取最终 Markdown 报告。
+5. `GET /api/v1/runs/{run_id}/report/view`：在浏览器查看排版后的 HTML 报告。
+
+API任务、人工审核结果、进度、错误和最终报告保存在 `data/my_agent.db`。服务重启后，
+待审核及已完成任务仍可查询；重启时仍在后台执行的任务会标记为失败，需要重新创建。
+后台研究最多同时执行两个。
+
 ## 媒体候选检索
 
 媒体来源配置位于 `config/media_sources.yaml`。RSS 按 `official_media` /

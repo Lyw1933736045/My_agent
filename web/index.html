@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Financial Single Agent｜金融简报</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <div class="atmosphere" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <a class="brand" href="/">Financial Single Agent</a>
+    <a class="top-link" href="/docs" target="_blank" rel="noopener">API</a>
+  </header>
+
+  <main>
+    <section class="hero" id="input-section">
+      <p class="brand-mark">Financial Single Agent</p>
+      <h1>把一个金融问题，收成一份可用简报</h1>
+      <p class="lede">输入自然语言，系统聚合新闻、权威媒体与社交候选，并生成主题简报。</p>
+
+      <form id="query-form" class="query-form">
+        <label class="sr-only" for="query-input">研究问题</label>
+        <textarea
+          id="query-input"
+          name="query"
+          rows="3"
+          maxlength="500"
+          required
+          placeholder="例如：央行降准对银行、债券市场和实体经济融资成本有什么影响？"
+        ></textarea>
+
+        <div class="actions">
+          <button type="submit" id="submit-btn" class="btn-primary">
+            <span class="btn-label">生成简报</span>
+          </button>
+          <button type="button" id="toggle-advanced" class="btn-ghost" aria-expanded="false">
+            高级：审核检索词
+          </button>
+        </div>
+      </form>
+
+      <div id="advanced-panel" class="advanced-panel" hidden>
+        <p class="panel-hint">开启后，会先生成检索计划供你修改，再开始聚合。</p>
+        <label class="check-row">
+          <input type="checkbox" id="require-review">
+          <span>生成计划后暂停，等待我确认检索词</span>
+        </label>
+      </div>
+    </section>
+
+    <section id="plan-section" class="stage" hidden>
+      <h2>检索计划</h2>
+      <p class="stage-meta">主题：<strong id="plan-topic"></strong></p>
+      <ul id="query-list" class="query-list"></ul>
+      <div class="actions">
+        <button type="button" id="add-query" class="btn-ghost">添加检索词</button>
+        <button type="button" id="approve-btn" class="btn-primary">批准并开始</button>
+      </div>
+    </section>
+
+    <section id="progress-section" class="stage" hidden>
+      <h2>正在生成</h2>
+      <p id="progress-text" class="progress-text">准备中…</p>
+      <div class="progress-track" aria-hidden="true">
+        <div id="progress-bar" class="progress-bar"></div>
+      </div>
+    </section>
+
+    <section id="error-section" class="stage stage-error" hidden>
+      <h2>出错了</h2>
+      <p id="error-text"></p>
+      <div id="error-sources" class="source-panel" hidden></div>
+      <button type="button" id="retry-btn" class="btn-primary">重新开始</button>
+    </section>
+
+    <section id="report-section" class="stage stage-report" hidden>
+      <div class="report-head">
+        <h2 id="report-title">简报</h2>
+        <div class="report-actions">
+          <button type="button" id="copy-btn" class="btn-ghost">复制 Markdown</button>
+          <a id="download-md" class="btn-ghost" href="#" download>导出 MD</a>
+          <a id="export-pdf" class="btn-ghost" href="#" target="_blank" rel="noopener">导出 PDF</a>
+          <a id="view-html" class="btn-ghost" href="#" target="_blank" rel="noopener">打开排版页</a>
+          <button type="button" id="new-btn" class="btn-primary">新问题</button>
+        </div>
+      </div>
+      <div id="report-sources" class="source-panel" hidden></div>
+      <article id="report-body" class="report-body"></article>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

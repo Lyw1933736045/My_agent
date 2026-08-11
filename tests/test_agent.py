@@ -57,8 +57,11 @@ class FinancialMediaAgentTests(unittest.TestCase):
     def test_discover_orchestrates_plan_and_providers(self, discovery_cls, _config):
         self.agent.query_plan_node.run = MagicMock(return_value={
             "topic": "央行降准", "media_queries": ["央行 降准"],
+            "provider_queries": {"weibo": "央行 降准"},
         })
-        self.agent._build_providers = MagicMock(return_value={"rss": object()})
+        self.agent._build_providers = MagicMock(
+            return_value={"rss": object(), "weibo": object()}
+        )
         discovery_cls.return_value.run.return_value = DiscoveryResult(
             [self.candidate], {"selected_count": 1}, {}
         )
@@ -71,6 +74,7 @@ class FinancialMediaAgentTests(unittest.TestCase):
     def test_create_plan_does_not_call_providers(self):
         self.agent.query_plan_node.run = MagicMock(return_value={
             "topic": "央行降准", "media_queries": ["央行 降准"],
+            "provider_queries": {"weibo": "央行 降准"},
         })
         self.agent._build_providers = MagicMock()
 
@@ -78,6 +82,7 @@ class FinancialMediaAgentTests(unittest.TestCase):
 
         self.assertEqual(state.topic, "央行降准")
         self.assertEqual(state.media_queries, ["央行 降准"])
+        self.assertEqual(state.provider_queries, {"weibo": "央行 降准"})
         self.assertIsNone(state.discovery)
         self.agent._build_providers.assert_not_called()
 
@@ -88,8 +93,11 @@ class FinancialMediaAgentTests(unittest.TestCase):
             query="央行降准",
             topic="央行降准",
             media_queries=["  央行   降准  ", "央行 降准", "债券 市场"],
+            provider_queries={"weibo": "央行 降准"},
         )
-        self.agent._build_providers = MagicMock(return_value={"rss": object()})
+        self.agent._build_providers = MagicMock(
+            return_value={"rss": object(), "weibo": object()}
+        )
         discovery_cls.return_value.run.return_value = DiscoveryResult(
             [self.candidate], {"selected_count": 1}, {}
         )
@@ -98,6 +106,10 @@ class FinancialMediaAgentTests(unittest.TestCase):
 
         self.assertEqual(result.media_queries, ["央行 降准", "债券 市场"])
         discovery_cls.return_value.run.assert_called_once()
+        self.assertEqual(
+            discovery_cls.return_value.run.call_args.kwargs["provider_queries"],
+            {"weibo": ["央行 降准"]},
+        )
 
     @patch("My_agent.agent.load_media_sources", side_effect=_media_config)
     def test_run_updates_state_through_filter_extract_and_brief(self, _config):
@@ -132,6 +144,33 @@ class FinancialMediaAgentTests(unittest.TestCase):
         self.assertEqual(result.relevant_documents_count, 1)
         self.assertEqual(result.insights, [insight])
         self.assertEqual(result.brief, "# 简报")
+
+    @patch("My_agent.agent.load_media_sources", side_effect=_media_config)
+    def test_content_ready_candidate_skips_web_reader(self, _config):
+        candidate = MediaCandidate(
+            "微博正文", "https://weibo.com/1/A", "微博", None,
+            snippet="微博完整正文", discovered_by=("weibo",),
+            source_group="social_media", metadata={"content_ready": True},
+        )
+        state = RunState(
+            query="微博测试", topic="微博测试", media_queries=["微博测试"],
+            discovery=DiscoveryResult([candidate], {"selected_count": 1}, {}),
+        )
+        self.agent.reader.read = MagicMock()
+        self.agent.candidate_filter_node.run = MagicMock(return_value=[
+            RelevanceDecision(candidate, "content", True, 95, "直接相关")
+        ])
+        insight = MediaInsight(
+            title=candidate.title, source_name="微博", url=candidate.url,
+            source_group="social_media",
+        )
+        self.agent.media_node.run = MagicMock(return_value=[insight])
+        self.agent.brief_node.run = MagicMock(return_value="# 微博简报")
+
+        result = self.agent.complete(state)
+
+        self.agent.reader.read.assert_not_called()
+        self.assertEqual(result.selected_documents[0].content, "微博完整正文")
 
 
 if __name__ == "__main__":

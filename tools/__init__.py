@@ -7,6 +7,7 @@ from .media_discovery import MediaDiscovery
 from .newsnow_provider import NewsNowProvider
 from .rss_provider import RSSProvider
 from .tavily_provider import TavilyMediaProvider
+from .weibo_provider import WeiboProvider
 
 __all__ = [
     "SearchResponse",
@@ -23,4 +24,5 @@ __all__ = [
     "NewsNowProvider",
     "RSSProvider",
     "TavilyMediaProvider",
+    "WeiboProvider",
 ]

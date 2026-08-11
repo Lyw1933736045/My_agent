@@ -15,6 +15,7 @@ class RunState:
     query: str
     topic: str = ""
     media_queries: list[str] = field(default_factory=list)
+    provider_queries: dict[str, str] = field(default_factory=dict)
     discovery: DiscoveryResult | None = None
     selected_documents: list[MediaDocument] = field(default_factory=list)
     content_decisions: list[RelevanceDecision] = field(default_factory=list)
@@ -22,6 +23,7 @@ class RunState:
     brief: str = ""
     read_attempted_count: int = 0
     read_success_count: int = 0
+    weibo_raw: list[dict] = field(default_factory=list)
 
     @property
     def relevant_documents_count(self) -> int:

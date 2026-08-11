@@ -16,6 +16,7 @@ class RunRecord:
     query: str
     topic: str
     proposed_queries: list[str]
+    provider_queries: dict[str, str]
     approved_queries: list[str]
     status: str
     progress: str
@@ -111,6 +112,9 @@ class RunRepository:
                 """
             )
             self._ensure_column(connection, "runs", "source_results", "TEXT")
+            self._ensure_column(
+                connection, "query_plans", "provider_queries", "TEXT"
+            )
             now = self._now()
             connection.execute(
                 """
@@ -131,6 +135,7 @@ class RunRepository:
         query: str,
         topic: str,
         proposed_queries: list[str],
+        provider_queries: dict[str, str] | None = None,
     ) -> None:
         now = self._now()
         with self._connection() as connection:
@@ -145,10 +150,14 @@ class RunRepository:
             connection.execute(
                 """
                 INSERT INTO query_plans (
-                    run_id, proposed_queries, review_status
-                ) VALUES (?, ?, 'pending')
+                    run_id, proposed_queries, provider_queries, review_status
+                ) VALUES (?, ?, ?, 'pending')
                 """,
-                (run_id, json.dumps(proposed_queries, ensure_ascii=False)),
+                (
+                    run_id,
+                    json.dumps(proposed_queries, ensure_ascii=False),
+                    json.dumps(provider_queries or {}, ensure_ascii=False),
+                ),
             )
             self._insert_event(
                 connection, run_id, "info", "检索计划已生成，等待人工审核", now
@@ -158,7 +167,7 @@ class RunRepository:
         with self._connection() as connection:
             row = connection.execute(
                 """
-                SELECT r.*, q.proposed_queries, q.approved_queries
+                SELECT r.*, q.proposed_queries, q.provider_queries, q.approved_queries
                 FROM runs AS r
                 JOIN query_plans AS q ON q.run_id = r.id
                 WHERE r.id = ?
@@ -172,6 +181,10 @@ class RunRepository:
             query=row["query"],
             topic=row["topic"],
             proposed_queries=json.loads(row["proposed_queries"]),
+            provider_queries=(
+                json.loads(row["provider_queries"])
+                if row["provider_queries"] else {}
+            ),
             approved_queries=(
                 json.loads(row["approved_queries"])
                 if row["approved_queries"]

@@ -16,6 +16,7 @@ from .tools import (
     NewsNowProvider,
     RSSProvider,
     TavilyMediaProvider,
+    WeiboProvider,
     WebReader,
 )
 from .tools.text_chunking import select_chunks, split_text
@@ -24,6 +25,7 @@ from .utils.media_sources import (
     MediaSourcesConfigError,
     load_media_sources,
     resolve_feed_url,
+    resolve_env_path,
 )
 
 
@@ -118,6 +120,35 @@ class FinancialMediaAgent:
             )
         elif tavily.get("enabled", False):
             self._progress("Tavily 跳过：未配置 TAVILY_API_KEY")
+
+        weibo = media_config.get("weibo") or {}
+        if weibo.get("enabled", False):
+            comments = weibo.get("comments") or {}
+            providers["weibo"] = WeiboProvider(
+                cookie_file=resolve_env_path(
+                    str(weibo.get("cookie_file", "")), "WEIBO_COOKIE_FILE"
+                ),
+                search_url=str(weibo.get("search_url", "")),
+                comments_url=str(weibo.get("comments_url", "")),
+                target_posts=int(weibo.get("target_posts", 20)),
+                max_search_pages=int(weibo.get("max_search_pages", 3)),
+                timeout=float(weibo.get("timeout_seconds", 20)),
+                request_interval_min=float(
+                    weibo.get("request_interval_min_seconds", 4)
+                ),
+                request_interval_max=float(
+                    weibo.get("request_interval_max_seconds", 8)
+                ),
+                trust_env_proxy=bool(weibo.get("trust_env_proxy", False)),
+                comments_enabled=bool(comments.get("enabled", False)),
+                max_comment_posts=int(comments.get("max_posts", 2)),
+                comment_interval_min=float(
+                    comments.get("request_interval_min_seconds", 5)
+                ),
+                comment_interval_max=float(
+                    comments.get("request_interval_max_seconds", 10)
+                ),
+            )
         return providers
 
     def discover(self, query: str, limit: int | None = None) -> RunState:
@@ -134,6 +165,7 @@ class FinancialMediaAgent:
         plan = self.query_plan_node.run({"query": query})
         state.topic = plan["topic"]
         state.media_queries = plan["media_queries"]
+        state.provider_queries = dict(plan.get("provider_queries") or {})
         return state
 
     def discover_from_plan(
@@ -163,8 +195,16 @@ class FinancialMediaAgent:
             limit=limit or int(selection.get("candidate_limit", 20)),
             max_per_source=int(selection.get("max_per_source", 3)),
             max_age_days=int(media_config["rss"].get("max_age_days", 30)),
+            provider_queries={
+                name: [query]
+                for name, query in state.provider_queries.items()
+                if isinstance(query, str) and query.strip() and name in providers
+            },
             progress=self.progress,
         )
+        weibo_provider = providers.get("weibo")
+        if weibo_provider is not None:
+            state.weibo_raw = list(getattr(weibo_provider, "raw_results", []))
         return state
 
     def run(self, query: str, limit: int | None = None) -> RunState:
@@ -198,20 +238,33 @@ class FinancialMediaAgent:
                 f"{candidate.title[:50]}"
             )
             try:
-                result = self.reader.read(candidate.url)
-                chunks = split_text(result.content)
-                selected_chunks = select_chunks(
-                    chunks,
-                    topic=state.topic,
-                    queries=state.media_queries,
-                    top_k=3,
-                )
+                if candidate.metadata.get("content_ready"):
+                    final_url = candidate.url
+                    fetched_at = str(
+                        candidate.metadata.get("fetched_at")
+                        or datetime.now().astimezone().isoformat(timespec="seconds")
+                    )
+                    content_type = "text/plain"
+                    content = candidate.snippet
+                else:
+                    result = self.reader.read(candidate.url)
+                    chunks = split_text(result.content)
+                    selected_chunks = select_chunks(
+                        chunks,
+                        topic=state.topic,
+                        queries=state.media_queries,
+                        top_k=3,
+                    )
+                    final_url = result.final_url
+                    fetched_at = result.fetched_at
+                    content_type = result.content_type
+                    content = "\n\n".join(selected_chunks)
                 state.selected_documents.append(MediaDocument(
                     candidate=candidate,
-                    final_url=result.final_url,
-                    fetched_at=result.fetched_at,
-                    content_type=result.content_type,
-                    content="\n\n".join(selected_chunks),
+                    final_url=final_url,
+                    fetched_at=fetched_at,
+                    content_type=content_type,
+                    content=content,
                 ))
             except Exception as exc:
                 self._progress(f"正文跳过：{candidate.title}（{exc}）")

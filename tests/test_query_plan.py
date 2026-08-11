@@ -63,6 +63,20 @@ class QueryPlanNodeTests(unittest.TestCase):
         self.assertNotIn("official_queries", result)
         self.assertNotIn("search_queries", result)
         self.assertEqual(len(result["media_queries"]), 2)
+        self.assertEqual(result["provider_queries"]["weibo"], "新能源车 政策影响")
+
+    def test_returns_llm_generated_balanced_weibo_query(self):
+        result = QueryPlanNode(
+            _FakeLLM({
+                "topic": "测试主题",
+                "media_queries": ["测试主体 核心事项", "测试对象 相关影响"],
+                "provider_queries": {"weibo": "测试主体 核心事项"},
+            })
+        ).run({"query": "研究测试主题"})
+
+        self.assertEqual(
+            result["provider_queries"], {"weibo": "测试主体 核心事项"}
+        )
 
     def test_accepts_single_item_array_wrapper(self):
         result = QueryPlanNode(

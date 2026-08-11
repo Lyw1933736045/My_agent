@@ -1,7 +1,7 @@
 """媒体发现、正文读取和观点提炼使用的统一数据模型。"""
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 
 @dataclass(frozen=True)
@@ -16,6 +16,7 @@ class MediaCandidate:
     query: Optional[str] = None
     guid: Optional[str] = None
     max_age_days: Optional[int] = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

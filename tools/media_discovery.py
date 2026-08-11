@@ -19,6 +19,7 @@ class MediaDiscovery:
         limit: int = 20,
         max_per_source: int = 3,
         max_age_days: int | None = None,
+        provider_queries: dict[str, list[str]] | None = None,
         progress=None,
     ) -> DiscoveryResult:
         if not queries:
@@ -35,8 +36,12 @@ class MediaDiscovery:
             if progress:
                 progress(f"开始 {name} 发现……")
             try:
+                effective_queries = (
+                    provider_queries.get(name, queries)
+                    if provider_queries else queries
+                )
                 items = provider.search(
-                    queries,
+                    effective_queries,
                     limit=max(limit * 3, 20),
                     progress=progress,
                 )

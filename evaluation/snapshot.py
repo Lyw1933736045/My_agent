@@ -6,9 +6,23 @@ from pathlib import Path
 from ..state import RunState
 
 
+def write_weibo_raw(state: RunState, directory: Path) -> Path | None:
+    """保存脱敏后的微博原始结果；空结果不创建文件。"""
+    if not state.weibo_raw:
+        return None
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "weibo_raw.json"
+    path.write_text(
+        json.dumps(state.weibo_raw, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return path
+
+
 def write_snapshot(state: RunState, directory: Path) -> tuple[Path, Path]:
     """只保存通过正文复核、实际交给后续节点的正文片段。"""
     directory.mkdir(parents=True, exist_ok=True)
+    write_weibo_raw(state, directory)
     relevant = {
         id(document): decision.relevant
         for document, decision in zip(state.selected_documents, state.content_decisions)

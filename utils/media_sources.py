@@ -37,6 +37,7 @@ def load_media_sources(config_path: str | Path = DEFAULT_CONFIG_PATH) -> dict:
     newsnow = _mapping(root.get("newsnow"), "newsnow")
     rss = _mapping(root.get("rss"), "rss")
     tavily = _mapping(root.get("tavily", {"enabled": False}), "tavily")
+    weibo = _mapping(root.get("weibo", {"enabled": False}), "weibo")
     selection = _mapping(root.get("selection"), "selection")
     if not isinstance(newsnow.get("sources"), list):
         raise MediaSourcesConfigError("配置字段 newsnow.sources 必须是列表")
@@ -61,10 +62,15 @@ def load_media_sources(config_path: str | Path = DEFAULT_CONFIG_PATH) -> dict:
             )
     if "enabled" in tavily and not isinstance(tavily.get("enabled"), bool):
         raise MediaSourcesConfigError("配置字段 tavily.enabled 必须是布尔值")
+    if "enabled" in weibo and not isinstance(weibo.get("enabled"), bool):
+        raise MediaSourcesConfigError("配置字段 weibo.enabled 必须是布尔值")
+    if weibo.get("enabled") and not str(weibo.get("cookie_file", "")).strip():
+        raise MediaSourcesConfigError("启用 weibo 时必须配置 cookie_file")
     return {
         "newsnow": newsnow,
         "rss": rss,
         "tavily": tavily,
+        "weibo": weibo,
         "selection": selection,
     }
 
@@ -87,4 +93,13 @@ def resolve_feed_url(url: str) -> str:
         raise MediaSourcesConfigError(
             "RSSHub 地址未配置，请设置 RSSHUB_BASE，例如 https://rsshub.app"
         )
+    return resolved
+
+
+def resolve_env_path(value: str, field: str) -> str:
+    """展开外部文件路径中的环境变量，并拒绝未解析的占位符。"""
+    load_dotenv(ENV_FILE, override=False)
+    resolved = os.path.expandvars(str(value).strip())
+    if not resolved or "${" in resolved:
+        raise MediaSourcesConfigError(f"{field} 未配置或包含未解析的环境变量")
     return resolved

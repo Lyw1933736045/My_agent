@@ -379,6 +379,21 @@ class MediaDiscoveryTests(unittest.TestCase):
         self.assertEqual(calls, ["newsnow", "rss", "tavily"])
         self.assertEqual(result.stats["fetched_count"], 0)
 
+    def test_routes_provider_specific_queries(self):
+        shared = _FakeProvider()
+        special = _FakeProvider()
+        shared.search = MagicMock(return_value=[])
+        special.search = MagicMock(return_value=[])
+
+        MediaDiscovery({"rss": shared, "weibo": special}).run(
+            ["媒体 查询"],
+            limit=10,
+            provider_queries={"weibo": ["宽松 微博查询"]},
+        )
+
+        self.assertEqual(shared.search.call_args.args[0], ["媒体 查询"])
+        self.assertEqual(special.search.call_args.args[0], ["宽松 微博查询"])
+
     def test_merges_provider_duplicates(self):
         rss = MediaCandidate(
             "央行政策热议", "https://example.com/a?utm_source=rss", "媒体A", None,

@@ -209,6 +209,24 @@ tavily:
   search_depth: "basic"
   # days: 7
 
+# 微博桌面搜索；Cookie 只通过项目外部文件提供，禁止写入本配置。
+weibo:
+  enabled: false
+  cookie_file: "${WEIBO_COOKIE_FILE}"
+  search_url: "https://s.weibo.com/weibo"
+  comments_url: "https://weibo.com/ajax/statuses/buildComments"
+  target_posts: 20
+  max_search_pages: 3
+  timeout_seconds: 20
+  request_interval_min_seconds: 4
+  request_interval_max_seconds: 8
+  trust_env_proxy: false
+  comments:
+    enabled: false
+    max_posts: 2
+    request_interval_min_seconds: 5
+    request_interval_max_seconds: 10
+
 selection:
   candidate_limit: 20
   read_limit: 8

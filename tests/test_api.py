@@ -35,10 +35,12 @@ class ApiTests(unittest.TestCase):
             query="央行降准",
             topic="央行降准影响",
             media_queries=["央行 降准"],
+            provider_queries={"weibo": "央行 降准"},
         )
         runner = MagicMock()
 
         def discover(state, limit=None):
+            self.assertEqual(state.provider_queries, {"weibo": "央行 降准"})
             return state
 
         def finish(state):

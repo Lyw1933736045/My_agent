@@ -67,7 +67,17 @@ class QueryPlanNode(BaseNode):
         media_queries = normalize(raw_media_queries, 5)
         if not media_queries:
             raise ValueError("LLM 未生成可用检索词")
+        raw_provider_queries = parsed.get("provider_queries")
+        weibo_query = ""
+        if isinstance(raw_provider_queries, dict):
+            raw_weibo_query = raw_provider_queries.get("weibo")
+            if isinstance(raw_weibo_query, str):
+                weibo_query = " ".join(raw_weibo_query.split())
+        # 兼容旧模型输出；不额外调用 LLM，也不阻断原有检索计划。
+        if not weibo_query:
+            weibo_query = media_queries[0]
         return {
             "topic": topic.strip(),
             "media_queries": media_queries,
+            "provider_queries": {"weibo": weibo_query},
         }

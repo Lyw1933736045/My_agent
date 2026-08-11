@@ -22,7 +22,7 @@ from .evaluation.judge import evaluate, load_case
 from .evaluation.metrics import summarize
 from .evaluation.rubric_builder import build_rubrics
 from .evaluation.run_eval import _client
-from .evaluation.snapshot import write_snapshot
+from .evaluation.snapshot import write_snapshot, write_weibo_raw
 from .run_repository import RunRecord, RunRepository
 from .state import RunState
 from .tools.media_models import DiscoveryResult
@@ -287,6 +287,7 @@ def _execute_run(run_id: str) -> None:
             query=record.query,
             topic=record.topic,
             media_queries=list(record.approved_queries),
+            provider_queries=dict(record.provider_queries),
         )
         agent = _new_agent(progress=progress)
         state = agent.discover_from_plan(state)
@@ -294,6 +295,7 @@ def _execute_run(run_id: str) -> None:
             raise _RunCanceled()
         sources = _sources_payload(state.discovery)
         _repository.save_source_results(run_id, sources)
+        write_weibo_raw(state, _evaluation_dir(run_id))
         result = agent.complete(state)
         if cancel_event.is_set():
             raise _RunCanceled()
@@ -331,6 +333,7 @@ def create_plan(request: CreatePlanRequest) -> PlanResponse:
         query=state.query,
         topic=state.topic,
         proposed_queries=list(state.media_queries),
+        provider_queries=dict(state.provider_queries),
     )
     record = _get_record(run_id)
     return PlanResponse(

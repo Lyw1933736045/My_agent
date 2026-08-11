@@ -307,6 +307,23 @@ class RunRepository:
                 )
             self._insert_event(connection, run_id, "error", error, now)
 
+    def cancel(self, run_id: str) -> bool:
+        now = self._now()
+        with self._connection() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE runs
+                SET status = 'canceled', progress = '任务已终止',
+                    error_message = '用户终止任务', updated_at = ?
+                WHERE id = ? AND status = 'running'
+                """,
+                (now, run_id),
+            )
+            if cursor.rowcount:
+                self._insert_event(connection, run_id, "info", "用户终止任务", now)
+                return True
+        return False
+
     @staticmethod
     def _insert_event(
         connection: sqlite3.Connection,

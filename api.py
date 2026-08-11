@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from html import escape
+import json
+from threading import Event
 from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
@@ -16,6 +18,11 @@ from markdown_it import MarkdownIt
 from pydantic import BaseModel, Field
 
 from .agent import FinancialMediaAgent
+from .evaluation.judge import evaluate, load_case
+from .evaluation.metrics import summarize
+from .evaluation.rubric_builder import build_rubrics
+from .evaluation.run_eval import _client
+from .evaluation.snapshot import write_snapshot
 from .run_repository import RunRecord, RunRepository
 from .state import RunState
 from .tools.media_models import DiscoveryResult
@@ -29,6 +36,7 @@ RunStatus = Literal[
     "running",
     "completed",
     "failed",
+    "canceled",
 ]
 
 
@@ -68,6 +76,17 @@ class RunResponse(BaseModel):
     source_summary: dict[str, int] = Field(default_factory=dict)
 
 
+class EvaluateRequest(BaseModel):
+    reference: str = Field(min_length=2, max_length=100_000)
+
+
+class EvaluationResponse(BaseModel):
+    run_id: str
+    status: Literal["pending", "running", "completed", "failed"]
+    summary: dict | None = None
+    error: str | None = None
+
+
 app = FastAPI(
     title="My_agent API",
     version="0.1.0",
@@ -76,6 +95,12 @@ app = FastAPI(
 
 _repository = RunRepository(PROJECT_ROOT / "data" / "my_agent.db")
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="my-agent")
+_evaluation_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="my-agent-eval")
+_cancel_events: dict[str, Event] = {}
+
+
+class _RunCanceled(Exception):
+    pass
 _markdown = MarkdownIt("commonmark", {"html": False, "linkify": False})
 
 
@@ -102,6 +127,50 @@ def _get_record(run_id: str) -> RunRecord:
 
 def _set_progress(run_id: str, message: str) -> None:
     _repository.update_progress(run_id, message)
+
+
+def _evaluation_dir(run_id: str) -> Path:
+    return PROJECT_ROOT / "data" / "evaluations" / run_id
+
+
+def _evaluation_status(run_id: str) -> dict:
+    path = _evaluation_dir(run_id) / "status.json"
+    if not path.is_file():
+        return {"run_id": run_id, "status": "pending"}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"run_id": run_id, "status": "pending"}
+    return payload if isinstance(payload, dict) else {"run_id": run_id, "status": "pending"}
+
+
+def _write_evaluation_status(run_id: str, **payload) -> None:
+    directory = _evaluation_dir(run_id)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "status.json").write_text(
+        json.dumps({"run_id": run_id, **payload}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _execute_evaluation(run_id: str) -> None:
+    directory = _evaluation_dir(run_id)
+    try:
+        _write_evaluation_status(run_id, status="running")
+        rubrics = build_rubrics(
+            _client(), directory / "reference.md", directory / "rubrics.json", overwrite=True
+        )
+        documents = json.loads((directory / "retrieved_documents.json").read_text(encoding="utf-8"))
+        report = (directory / "report.md").read_text(encoding="utf-8")
+        result = evaluate(_client(), rubrics, documents, report)
+        summary = summarize(result)
+        (directory / "result.json").write_text(
+            json.dumps({"summary": summary, "judgments": result.model_dump()}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        _write_evaluation_status(run_id, status="completed", summary=summary)
+    except Exception as exc:
+        _write_evaluation_status(run_id, status="failed", error=str(exc))
 
 
 def _sources_payload(discovery: DiscoveryResult | None) -> list[dict]:
@@ -206,23 +275,37 @@ def _report_html_page(
 def _execute_run(run_id: str) -> None:
     record = _get_record(run_id)
     sources: list[dict] = []
+    cancel_event = _cancel_events.setdefault(run_id, Event())
+
+    def progress(message: str) -> None:
+        if cancel_event.is_set():
+            raise _RunCanceled()
+        _set_progress(run_id, message)
+
     try:
         state = RunState(
             query=record.query,
             topic=record.topic,
             media_queries=list(record.approved_queries),
         )
-        agent = _new_agent(progress=lambda message: _set_progress(run_id, message))
+        agent = _new_agent(progress=progress)
         state = agent.discover_from_plan(state)
+        if cancel_event.is_set():
+            raise _RunCanceled()
         sources = _sources_payload(state.discovery)
         _repository.save_source_results(run_id, sources)
         result = agent.complete(state)
+        if cancel_event.is_set():
+            raise _RunCanceled()
+        write_snapshot(state, _evaluation_dir(run_id))
         _repository.complete(run_id, result.brief, source_results=sources)
         try:
             saved = FinancialMediaAgent.save_brief(result.brief)
             _set_progress(run_id, f"研究完成，已保存 {saved.name}")
         except Exception as exc:
             _set_progress(run_id, f"研究完成，但保存报告文件失败：{exc}")
+    except _RunCanceled:
+        _repository.cancel(run_id)
     except Exception as exc:
         _repository.fail(run_id, str(exc), source_results=sources or None)
 
@@ -280,6 +363,15 @@ def approve_plan(run_id: str, request: ApprovePlanRequest) -> RunResponse:
     return _to_run_response(_get_record(run_id))
 
 
+@app.post("/api/v1/runs/{run_id}/cancel", response_model=RunResponse)
+def cancel_run(run_id: str) -> RunResponse:
+    _get_record(run_id)
+    _cancel_events.setdefault(run_id, Event()).set()
+    if not _repository.cancel(run_id):
+        raise HTTPException(status_code=409, detail="任务已经结束，不能终止")
+    return _to_run_response(_get_record(run_id))
+
+
 @app.get("/api/v1/runs/{run_id}", response_model=RunResponse)
 def get_run(run_id: str) -> RunResponse:
     return _to_run_response(_get_record(run_id))
@@ -290,6 +382,27 @@ def get_report(run_id: str) -> dict[str, str]:
     record = _get_record(run_id)
     report = _require_completed_report(record)
     return {"run_id": run_id, "report": report}
+
+
+@app.post("/api/v1/runs/{run_id}/evaluate", response_model=EvaluationResponse, status_code=status.HTTP_202_ACCEPTED)
+def start_evaluation(run_id: str, request: EvaluateRequest) -> EvaluationResponse:
+    record = _get_record(run_id)
+    if record.status != "completed":
+        raise HTTPException(status_code=409, detail="报告尚未完成，不能开始评测")
+    directory = _evaluation_dir(run_id)
+    if not (directory / "retrieved_documents.json").is_file():
+        raise HTTPException(status_code=409, detail="本次运行缺少检索材料快照")
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "reference.md").write_text(request.reference.strip() + "\n", encoding="utf-8")
+    _write_evaluation_status(run_id, status="pending")
+    _evaluation_executor.submit(_execute_evaluation, run_id)
+    return EvaluationResponse(run_id=run_id, status="pending")
+
+
+@app.get("/api/v1/runs/{run_id}/evaluation", response_model=EvaluationResponse)
+def get_evaluation(run_id: str) -> EvaluationResponse:
+    _get_record(run_id)
+    return EvaluationResponse.model_validate(_evaluation_status(run_id))
 
 
 @app.get("/api/v1/runs/{run_id}/report.md")

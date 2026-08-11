@@ -69,6 +69,7 @@
       <div class="progress-track" aria-hidden="true">
         <div id="progress-bar" class="progress-bar"></div>
       </div>
+      <button type="button" id="cancel-btn" class="btn-ghost">终止任务</button>
     </section>
 
     <section id="error-section" class="stage stage-error" hidden>
@@ -91,6 +92,15 @@
       </div>
       <div id="report-sources" class="source-panel" hidden></div>
       <article id="report-body" class="report-body"></article>
+
+      <section id="evaluation-panel" class="evaluation-panel">
+        <h3>报告评测</h3>
+        <p class="stage-meta">粘贴 reference，系统将按 rubric 评估新闻材料覆盖和报告覆盖。</p>
+        <textarea id="reference-input" rows="8" maxlength="100000" placeholder="粘贴 reference 报告"></textarea>
+        <button type="button" id="evaluate-btn" class="btn-primary">开始评测</button>
+        <p id="evaluation-progress" class="progress-text" hidden></p>
+        <div id="evaluation-result" class="evaluation-result" hidden></div>
+      </section>
     </section>
   </main>
 

@@ -1,0 +1,439 @@
+{
+  "summary": {
+    "retrieval_coverage": 50.0,
+    "report_coverage": 51.6,
+    "core_retrieval_coverage": 50.0,
+    "core_report_coverage": 50.0,
+    "important_retrieval_coverage": 50.0,
+    "important_report_coverage": 52.0,
+    "overall_base_score": 50.6,
+    "bonus_points": 0,
+    "overall_score": 50.6,
+    "diagnosis": {
+      "correctly_covered": 18,
+      "retrieval_miss": 13,
+      "summarization_miss": 0,
+      "potential_unsupported": 1
+    }
+  },
+  "judgments": {
+    "coverage": [
+      {
+        "rubric_id": "R001",
+        "retrieval": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        },
+        "report": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        }
+      },
+      {
+        "rubric_id": "R002",
+        "retrieval": {
+          "score": 1.0,
+          "evidence": "吴清表示“5年期人民币国债期货在港正式落地，是正当其时、水到渠成”",
+          "source_url": "https://www.news.cn/gangao/20260803/169fdf23928b4c36935d7188827c019d/c.html"
+        },
+        "report": {
+          "score": 1.0,
+          "evidence": "报告引述吴清表示“正当其时、水到渠成”",
+          "source_url": "https://www.news.cn/gangao/20260803/169fdf23928b4c36935d7188827c019d/c.html"
+        }
+      },
+      {
+        "rubric_id": "R003",
+        "retrieval": {
+          "score": 0.5,
+          "evidence": "Paul Chan: 'This is an important step in supporting the long-term development of the offshore RMB bond market...'（未提“新里程”）",
+          "source_url": "https://english.news.cn/20260803/9d9df91b9d774f81823d8c34f51a2664/c.html"
+        },
+        "report": {
+          "score": 0.5,
+          "evidence": "陈茂波称这是支持离岸人民币债券市场长期发展和人民币国际化进程的重要一步（无“新里程”表述）",
+          "source_url": "https://english.news.cn/20260803/9d9df91b9d774f81823d8c34f51a2664/c.html"
+        }
+      },
+      {
+        "rubric_id": "R004",
+        "retrieval": {
+          "score": 1.0,
+          "evidence": "Paul Chan: 'closes a critical gap in our offshore RMB toolkit'；新华网：国债期货提升香港风险管理功能",
+          "source_url": "https://english.news.cn/20260803/9d9df91b9d774f81823d8c34f51a2664/c.html"
+        },
+        "report": {
+          "score": 1.0,
+          "evidence": "陈茂波称弥补了离岸人民币工具箱中的关键缺口；国债期货提升香港风险管理功能",
+          "source_url": "https://english.news.cn/20260803/9d9df91b9d774f81823d8c34f51a2664/c.html"
+        }
+      },
+      {
+        "rubric_id": "R005",
+        "retrieval": {
+          "score": 1.0,
+          "evidence": "Paul Chan: 'This is an important step in supporting the long-term development of the offshore RMB bond market'",
+          "source_url": "https://english.news.cn/20260803/9d9df91b9d774f81823d8c34f51a2664/c.html"
+        },
+        "report": {
+          "score": 1.0,
+          "evidence": "陈茂波称支持离岸人民币债券市场长期发展；吴清称促进两地国债现货、期货及衍生品市场紧密联动",
+          "source_url": "https://english.news.cn/20260803/9d9df91b9d774f81823d8c34f51a2664/c.html"
+        }
+      },
+      {
+        "rubric_id": "R006",
+        "retrieval": {
+          "score": 1.0,
+          "evidence": "Paul Chan: '...and the broader process of the internationalization of RMB'",
+          "source_url": "https://english.news.cn/20260803/9d9df91b9d774f81823d8c34f51a2664/c.html"
+        },
+        "report": {
+          "score": 1.0,
+          "evidence": "陈茂波称这是支持人民币国际化进程的重要一步",
+          "source_url": "https://english.news.cn/20260803/9d9df91b9d774f81823d8c34f51a2664/c.html"
+        }
+      },
+      {
+        "rubric_id": "R007",
+        "retrieval": {
+          "score": 0.5,
+          "evidence": "报道称产品与债券通、互换通互补，并“closes a critical gap in our offshore RMB toolkit”，但未明确“重要一环”",
+          "source_url": "https://english.news.cn/20260803/9d9df91b9d774f81823d8c34f51a2664/c.html"
+        },
+        "report": {
+          "score": 0.5,
+          "evidence": "报告称弥补/填补了离岸人民币风险管理工具的关键缺口，但未明确“重要一环”",
+          "source_url": "https://english.news.cn/20260803/9d9df91b9d774f81823d8c34f51a2664/c.html"
+        }
+      },
+      {
+        "rubric_id": "R008",
+        "retrieval": {
+          "score": 1.0,
+          "evidence": "分析师称此举“enhances the appeal of yuan-denominated assets”",
+          "source_url": "https://en.people.cn/n3/2026/0804/c90000-20484968.html"
+        },
+        "report": {
+          "score": 1.0,
+          "evidence": "分析人士称此举提升了人民币计价资产的吸引力",
+          "source_url": "https://en.people.cn/n3/2026/0804/c90000-20484968.html"
+        }
+      },
+      {
+        "rubric_id": "R009",
+        "retrieval": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        },
+        "report": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        }
+      },
+      {
+        "rubric_id": "R010",
+        "retrieval": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        },
+        "report": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        }
+      },
+      {
+        "rubric_id": "R011",
+        "retrieval": {
+          "score": 1.0,
+          "evidence": "新浪财经：它是唯一一只在离岸市场上市的中国国债期货合约产品",
+          "source_url": "https://finance.sina.com.cn/jjxw/2026-08-04/doc-inimawmr4243784.shtml"
+        },
+        "report": {
+          "score": 1.0,
+          "evidence": "报告称该产品是离岸市场首只、也是唯一一只中国国债期货合约",
+          "source_url": "https://finance.sina.com.cn/jjxw/2026-08-04/doc-inimawmr4243784.shtml"
+        }
+      },
+      {
+        "rubric_id": "R012",
+        "retrieval": {
+          "score": 1.0,
+          "evidence": "China Daily/Xinhua: 'meet their growing need for managing government bond-related risks'",
+          "source_url": "https://english.news.cn/20260803/9d9df91b9d774f81823d8c34f51a2664/c.html"
+        },
+        "report": {
+          "score": 0.5,
+          "evidence": "报告提到满足其管理国债相关风险的需求，但未明确“日益增长”",
+          "source_url": "https://www.chinadailyhk.com/hk/article/635210"
+        }
+      },
+      {
+        "rubric_id": "R013",
+        "retrieval": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        },
+        "report": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        }
+      },
+      {
+        "rubric_id": "R014",
+        "retrieval": {
+          "score": 1.0,
+          "evidence": "China Daily: 'will further strengthen the city’s position as an offshore renminbi center and risk management hub'",
+          "source_url": "https://www.chinadailyhk.com/hk/article/635210"
+        },
+        "report": {
+          "score": 1.0,
+          "evidence": "报告称有助于巩固香港作为离岸人民币枢纽的地位/作用",
+          "source_url": "https://en.people.cn/n3/2026/0804/c90000-20484968.html"
+        }
+      },
+      {
+        "rubric_id": "R015",
+        "retrieval": {
+          "score": 1.0,
+          "evidence": "China Daily: '...and risk management hub for RMB assets'",
+          "source_url": "https://www.chinadailyhk.com/hk/article/635210"
+        },
+        "report": {
+          "score": 1.0,
+          "evidence": "报告称国债期货提升香港风险管理功能，香港升级为双向风险管理枢纽",
+          "source_url": "https://www.news.cn/gangao/20260803/169fdf23928b4c36935d7188827c019d/c.html"
+        }
+      },
+      {
+        "rubric_id": "R016",
+        "retrieval": {
+          "score": 1.0,
+          "evidence": "People's Daily: 'settled in cash rather than via physical delivery of bonds'",
+          "source_url": "https://en.people.cn/n3/2026/0804/c90000-20484968.html"
+        },
+        "report": {
+          "score": 1.0,
+          "evidence": "报告称该合约以现金结算、现金交割，而非实物交割",
+          "source_url": "https://en.people.cn/n3/2026/0804/c90000-20484968.html"
+        }
+      },
+      {
+        "rubric_id": "R017",
+        "retrieval": {
+          "score": 1.0,
+          "evidence": "新浪财经：价格按一篮子中国国债厘定",
+          "source_url": "https://finance.sina.com.cn/jjxw/2026-08-04/doc-inimawmr4243784.shtml"
+        },
+        "report": {
+          "score": 1.0,
+          "evidence": "报告称价格按一篮子中国国债厘定",
+          "source_url": "https://finance.sina.com.cn/jjxw/2026-08-04/doc-inimawmr4243784.shtml"
+        }
+      },
+      {
+        "rubric_id": "R018",
+        "retrieval": {
+          "score": 0.5,
+          "evidence": "People's Daily: 'settled in cash rather than via physical delivery of bonds'（隐含与实物交割对比，未明确在岸品种）",
+          "source_url": "https://en.people.cn/n3/2026/0804/c90000-20484968.html"
+        },
+        "report": {
+          "score": 0.5,
+          "evidence": "报告称以现金结算而非实物交割，未明确在岸国债期货品种采用实物交割",
+          "source_url": "https://en.people.cn/n3/2026/0804/c90000-20484968.html"
+        }
+      },
+      {
+        "rubric_id": "R019",
+        "retrieval": {
+          "score": 1.0,
+          "evidence": "People's Daily: 'contracts have a size of 500,000 yuan'",
+          "source_url": "https://en.people.cn/n3/2026/0804/c90000-20484968.html"
+        },
+        "report": {
+          "score": 1.0,
+          "evidence": "报告称合约规模为50万元人民币",
+          "source_url": "https://en.people.cn/n3/2026/0804/c90000-20484968.html"
+        }
+      },
+      {
+        "rubric_id": "R020",
+        "retrieval": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        },
+        "report": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        }
+      },
+      {
+        "rubric_id": "R021",
+        "retrieval": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        },
+        "report": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        }
+      },
+      {
+        "rubric_id": "R022",
+        "retrieval": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        },
+        "report": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        }
+      },
+      {
+        "rubric_id": "R023",
+        "retrieval": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        },
+        "report": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        }
+      },
+      {
+        "rubric_id": "R024",
+        "retrieval": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        },
+        "report": {
+          "score": 1.0,
+          "evidence": "报告：香港证监会表示，截至2026年5月底，外国投资者持有中国国债约2万亿元人民币",
+          "source_url": "https://www.chinadailyhk.com/hk/article/635210"
+        }
+      },
+      {
+        "rubric_id": "R025",
+        "retrieval": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        },
+        "report": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        }
+      },
+      {
+        "rubric_id": "R026",
+        "retrieval": {
+          "score": 0.5,
+          "evidence": "报道称提供有效离岸对冲工具 'provide international investors with an effective offshore hedging tool'（未明确“关键”）",
+          "source_url": "https://www.chinadailyhk.com/hk/article/635210"
+        },
+        "report": {
+          "score": 0.5,
+          "evidence": "报告称提供有效的离岸对冲工具/标准化场内对冲工具，未明确“关键”",
+          "source_url": "https://www.chinadailyhk.com/hk/article/635210"
+        }
+      },
+      {
+        "rubric_id": "R027",
+        "retrieval": {
+          "score": 1.0,
+          "evidence": "Xinhua: 'supporting the long-term development of the offshore RMB bond market and the broader process of the internationalization of RMB'",
+          "source_url": "https://english.news.cn/20260803/9d9df91b9d774f81823d8c34f51a2664/c.html"
+        },
+        "report": {
+          "score": 1.0,
+          "evidence": "报告提及在岸与离岸协同开放、支持人民币国际化及互联互通",
+          "source_url": "https://www.news.cn/gangao/20260803/169fdf23928b4c36935d7188827c019d/c.html"
+        }
+      },
+      {
+        "rubric_id": "R028",
+        "retrieval": {
+          "score": 1.0,
+          "evidence": "新浪财经：13家流动性提供商开展双边报价、做市商保障流动性；投资者对冲需求上升，有助于带动初期成交",
+          "source_url": "https://finance.sina.com.cn/jjxw/2026-08-04/doc-inimawmr4243784.shtml"
+        },
+        "report": {
+          "score": 1.0,
+          "evidence": "报告称13家流动性提供商提供双边报价；汇丰称有助于带动初期成交；投资者对冲需求上升",
+          "source_url": "https://finance.sina.com.cn/jjxw/2026-08-04/doc-inimawmr4243784.shtml"
+        }
+      },
+      {
+        "rubric_id": "R029",
+        "retrieval": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        },
+        "report": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        }
+      },
+      {
+        "rubric_id": "R030",
+        "retrieval": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        },
+        "report": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        }
+      },
+      {
+        "rubric_id": "R031",
+        "retrieval": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        },
+        "report": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        }
+      },
+      {
+        "rubric_id": "R032",
+        "retrieval": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        },
+        "report": {
+          "score": 0.0,
+          "evidence": null,
+          "source_url": null
+        }
+      }
+    ]
+  }
+}

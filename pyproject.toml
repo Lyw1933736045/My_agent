@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
   "openai>=1.3.0",
+  "httpx>=0.27.0",
   "tavily-python>=0.3.0",
   "pydantic>=2.5.0",
   "pydantic-settings>=2.2.0",
@@ -36,6 +37,7 @@ packages = [
   "financial_single_agent.state",
   "financial_single_agent.tools",
   "financial_single_agent.utils",
+  "financial_single_agent.evaluation",
 ]
 package-dir = {financial_single_agent = "."}
 

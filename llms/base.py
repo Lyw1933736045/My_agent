@@ -3,6 +3,7 @@
 from datetime import datetime
 from typing import Optional
 
+import httpx
 from openai import OpenAI
 
 from ..utils.retry_helper import with_retry
@@ -15,10 +16,15 @@ class LLMClient:
         model_name: str,
         base_url: Optional[str] = None,
         timeout: float = 300.0,
+        trust_env: bool = True,
     ):
         if not api_key or not model_name:
             raise ValueError("LLM API Key 和模型名不能为空")
-        kwargs = {"api_key": api_key, "max_retries": 0}
+        kwargs = {
+            "api_key": api_key,
+            "max_retries": 0,
+            "http_client": httpx.Client(trust_env=trust_env, timeout=timeout),
+        }
         if base_url:
             kwargs["base_url"] = base_url
         self.client = OpenAI(**kwargs)

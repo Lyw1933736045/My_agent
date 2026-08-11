@@ -504,3 +504,35 @@ main {
     justify-content: center;
   }
 }
+.evaluation-panel {
+  margin-top: 36px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line, #e5e7eb);
+}
+
+.evaluation-panel textarea {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--line, #d1d5db);
+  border-radius: 8px;
+  font: inherit;
+  resize: vertical;
+}
+
+.evaluation-result {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.evaluation-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #f5f7fa;
+  border-radius: 8px;
+}

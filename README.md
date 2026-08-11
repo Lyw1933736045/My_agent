@@ -31,6 +31,34 @@ python3 -m financial_single_agent.cli "要研究的金融事件"
 本工具不接入实时行情或结构化财务数据库，结果仅基于搜索时可获得的公开资料，
 不构成投资建议。
 
+## LLM-as-a-Judge 评测
+
+评测案例位于 `evaluation_cases/<事件>/`。将 mentor 参考报告粘贴到 `reference.md`，
+再生成一次固定的 rubric：
+
+```bash
+python3 -m My_agent.evaluation.run_eval build-rubrics \
+  --case My_agent/evaluation_cases/event_001
+```
+
+Judge 默认使用 `qwen3.7-plus`，可在 `.env` 中设置 `JUDGE_API_KEY`、`JUDGE_BASE_URL`
+和 `JUDGE_MODEL_NAME`。运行 Agent 时指定案例目录，保存实际使用的正文片段和最终报告：
+
+```bash
+python3 -m My_agent.cli topic-brief \
+  --query "待评测的金融事件" \
+  --evaluation-case My_agent/evaluation_cases/event_001
+```
+
+再执行评测：
+
+```bash
+python3 -m My_agent.evaluation.run_eval evaluate \
+  --case My_agent/evaluation_cases/event_001
+```
+
+结果写入 `result.json`，包含综合分、检索覆盖、报告覆盖和证据支撑率，以及缺口诊断。
+
 ## FastAPI 与前端
 
 安装项目后启动 API：

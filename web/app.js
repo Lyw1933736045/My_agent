@@ -15,6 +15,7 @@
     approveBtn: document.getElementById("approve-btn"),
     progressSection: document.getElementById("progress-section"),
     progressText: document.getElementById("progress-text"),
+    cancelBtn: document.getElementById("cancel-btn"),
     errorSection: document.getElementById("error-section"),
     errorText: document.getElementById("error-text"),
     errorSources: document.getElementById("error-sources"),
@@ -28,11 +29,17 @@
     exportPdf: document.getElementById("export-pdf"),
     viewHtml: document.getElementById("view-html"),
     newBtn: document.getElementById("new-btn"),
+    evaluationPanel: document.getElementById("evaluation-panel"),
+    referenceInput: document.getElementById("reference-input"),
+    evaluateBtn: document.getElementById("evaluate-btn"),
+    evaluationProgress: document.getElementById("evaluation-progress"),
+    evaluationResult: document.getElementById("evaluation-result"),
   };
 
   let currentRunId = null;
   let latestMarkdown = "";
   let pollTimer = null;
+  let evaluationTimer = null;
 
   function show(el) {
     el.hidden = false;
@@ -48,6 +55,21 @@
     els.input.readOnly = busy;
   }
 
+  async function cancelRun() {
+    if (!currentRunId) return;
+    els.cancelBtn.disabled = true;
+    try {
+      await api(`/api/v1/runs/${currentRunId}/cancel`, { method: "POST" });
+      stopPolling();
+      els.progressText.textContent = "任务已终止";
+      els.cancelBtn.hidden = true;
+      setBusy(false);
+    } catch (error) {
+      els.progressText.textContent = error.message || String(error);
+      els.cancelBtn.disabled = false;
+    }
+  }
+
   function resetStages() {
     hide(els.planSection);
     hide(els.progressSection);
@@ -58,6 +80,12 @@
     els.errorSources.innerHTML = "";
     els.reportSources.innerHTML = "";
     stopPolling();
+    els.cancelBtn.hidden = true;
+    if (evaluationTimer) clearTimeout(evaluationTimer);
+    els.referenceInput.value = "";
+    els.evaluationResult.hidden = true;
+    els.evaluationResult.innerHTML = "";
+    els.evaluationProgress.hidden = true;
   }
 
   function showError(message, sources) {
@@ -222,10 +250,49 @@
       els.reportBody.textContent = latestMarkdown;
     }
     hide(els.progressSection);
+    els.cancelBtn.hidden = true;
     hide(els.errorSection);
     show(els.reportSection);
     els.reportSection.scrollIntoView({ behavior: "smooth", block: "start" });
     setBusy(false);
+  }
+
+  function renderEvaluation(summary) {
+    const rows = [
+      ["最终得分", summary.overall_score],
+      ["报告覆盖率", summary.report_coverage],
+      ["新闻材料覆盖率", summary.retrieval_coverage],
+      ["核心 rubric 报告覆盖", summary.core_report_coverage],
+      ["重要 rubric 报告覆盖", summary.important_report_coverage],
+    ];
+    els.evaluationResult.innerHTML = rows
+      .map(([label, value]) => `<div class="evaluation-row"><span>${label}</span><strong>${value}</strong></div>`)
+      .join("");
+    els.evaluationResult.hidden = false;
+  }
+
+  async function pollEvaluation(runId) {
+    try {
+      const evaluation = await api(`/api/v1/runs/${runId}/evaluation`);
+      if (evaluation.status === "completed") {
+        els.evaluationProgress.hidden = true;
+        renderEvaluation(evaluation.summary || {});
+        els.evaluateBtn.disabled = false;
+        return;
+      }
+      if (evaluation.status === "failed") {
+        els.evaluationProgress.textContent = `评测失败：${evaluation.error || "未知错误"}`;
+        els.evaluateBtn.disabled = false;
+        return;
+      }
+      els.evaluationProgress.textContent = "正在生成 rubric 并评测……";
+      els.evaluationProgress.hidden = false;
+      evaluationTimer = setTimeout(() => pollEvaluation(runId), POLL_MS);
+    } catch (error) {
+      els.evaluationProgress.textContent = error.message || String(error);
+      els.evaluationProgress.hidden = false;
+      els.evaluateBtn.disabled = false;
+    }
   }
 
   async function pollRun(runId) {
@@ -245,6 +312,12 @@
         showError(run.error || "研究任务失败", run.sources || []);
         return;
       }
+      if (run.status === "canceled") {
+        els.progressText.textContent = "任务已终止";
+        els.cancelBtn.hidden = true;
+        setBusy(false);
+        return;
+      }
       pollTimer = setTimeout(() => pollRun(runId), POLL_MS);
     } catch (error) {
       showError(error.message || String(error));
@@ -257,6 +330,7 @@
       running: "正在聚合与生成简报",
       completed: "已完成",
       failed: "失败",
+      canceled: "已终止",
     };
     return map[status] || status;
   }
@@ -268,6 +342,8 @@
     hide(els.reportSection);
     els.progressText.textContent = "任务已启动，正在聚合来源…";
     show(els.progressSection);
+    els.cancelBtn.hidden = false;
+    els.cancelBtn.disabled = false;
     els.progressSection.scrollIntoView({ behavior: "smooth", block: "start" });
     pollRun(runId);
   }
@@ -358,6 +434,8 @@
     }
   });
 
+  els.cancelBtn.addEventListener("click", cancelRun);
+
   els.copyBtn.addEventListener("click", async () => {
     try {
       await navigator.clipboard.writeText(latestMarkdown);
@@ -370,6 +448,29 @@
       setTimeout(() => {
         els.copyBtn.textContent = "复制 Markdown";
       }, 1500);
+    }
+  });
+
+  els.evaluateBtn.addEventListener("click", async () => {
+    const reference = els.referenceInput.value.trim();
+    if (!currentRunId || reference.length < 2) {
+      els.evaluationProgress.textContent = "请先粘贴 reference";
+      els.evaluationProgress.hidden = false;
+      return;
+    }
+    els.evaluateBtn.disabled = true;
+    els.evaluationProgress.textContent = "正在提交评测……";
+    els.evaluationProgress.hidden = false;
+    els.evaluationResult.hidden = true;
+    try {
+      await api(`/api/v1/runs/${currentRunId}/evaluate`, {
+        method: "POST",
+        body: JSON.stringify({ reference }),
+      });
+      await pollEvaluation(currentRunId);
+    } catch (error) {
+      els.evaluationProgress.textContent = error.message || String(error);
+      els.evaluateBtn.disabled = false;
     }
   });
 

@@ -1,0 +1,358 @@
+{
+  "rubrics": [
+    {
+      "id": "R001",
+      "category": "official_statement",
+      "criterion": "证监会主席吴清表示5年期国债期货上市是内地与香港深化资本市场务实合作的重要里程碑。",
+      "reference_evidence": "证监会主席吴清在上市仪式上表示，这是内地与香港深化资本市场务实合作的又一重要里程碑",
+      "reference_source": [
+        "无"
+      ],
+      "importance": "core",
+      "importance_reason": "缺失会导致无法了解监管层对该事件的核心定性。"
+    },
+    {
+      "id": "R002",
+      "category": "official_statement",
+      "criterion": "证监会主席吴清评价5年期国债期货推出“正当其时，水到渠成”。",
+      "reference_evidence": "“正当其时，水到渠成”",
+      "reference_source": [
+        "无"
+      ],
+      "importance": "important",
+      "importance_reason": "补充官方对推出时机的评价，有助于理解政策推出的背景与成熟度。"
+    },
+    {
+      "id": "R003",
+      "category": "official_statement",
+      "criterion": "香港特区政府财政司司长陈茂波表示5年期国债期货上市是香港离岸人民币业务枢纽发展的新里程。",
+      "reference_evidence": "香港特区政府财政司司长陈茂波2日发表网志表示，这是香港离岸人民币业务枢纽发展的新里程",
+      "reference_source": [
+        "新华网"
+      ],
+      "importance": "core",
+      "importance_reason": "缺失会导致无法了解香港官方对该事件在离岸人民币业务中地位的核心定性。"
+    },
+    {
+      "id": "R004",
+      "category": "official_statement",
+      "criterion": "香港特区政府财政司司长陈茂波表示该产品丰富了香港市场的人民币风险管理工具。",
+      "reference_evidence": "不仅丰富香港市场的人民币风险管理工具",
+      "reference_source": [
+        "新华网"
+      ],
+      "importance": "important",
+      "importance_reason": "明确产品在风险管理工具层面的具体作用，是理解产品意义的重要补充。"
+    },
+    {
+      "id": "R005",
+      "category": "official_statement",
+      "criterion": "香港特区政府财政司司长陈茂波表示该产品标志着国债在离岸市场的深化发展。",
+      "reference_evidence": "更标志着国债在离岸市场的深化发展",
+      "reference_source": [
+        "新华网"
+      ],
+      "importance": "important",
+      "importance_reason": "揭示产品在国债离岸市场发展层面的宏观意义。"
+    },
+    {
+      "id": "R006",
+      "category": "official_statement",
+      "criterion": "香港特区政府财政司司长陈茂波表示该产品标志着人民币国际化的有序推进。",
+      "reference_evidence": "和人民币国际化的有序推进",
+      "reference_source": [
+        "新华网"
+      ],
+      "importance": "important",
+      "importance_reason": "揭示产品在人民币国际化战略层面的宏观意义。"
+    },
+    {
+      "id": "R007",
+      "category": "product_significance",
+      "criterion": "新华财经报道指出该产品的推出被视为补齐离岸人民币利率风险管理工具链的“重要一环”。",
+      "reference_evidence": "该产品的推出被视为补齐离岸人民币利率风险管理工具链的“重要一环”",
+      "reference_source": [
+        "新华财经"
+      ],
+      "importance": "important",
+      "importance_reason": "明确产品在利率风险管理工具链中的定位，是理解产品市场意义的关键。"
+    },
+    {
+      "id": "R008",
+      "category": "product_significance",
+      "criterion": "新华财经报道指出该产品的推出将进一步增强人民币资产吸引力。",
+      "reference_evidence": "将进一步增强人民币资产吸引力",
+      "reference_source": [
+        "新华财经"
+      ],
+      "importance": "important",
+      "importance_reason": "揭示产品对人民币资产市场的宏观影响，是理解产品作用的重要视角。"
+    },
+    {
+      "id": "R009",
+      "category": "market_view",
+      "criterion": "业内人士认为过去境外投资者主要依赖场外工具管理利率风险。",
+      "reference_evidence": "过去境外投资者主要依赖场外工具管理利率风险",
+      "reference_source": [
+        "新华财经"
+      ],
+      "importance": "important",
+      "importance_reason": "提供产品推出的市场痛点背景，有助于理解产品设计的初衷。"
+    },
+    {
+      "id": "R010",
+      "category": "market_view",
+      "criterion": "业内人士认为5年期人民币国债期货的推出将与债券通、互换通共同构成“现券-互换-期货”三位一体的完整风险管理闭环。",
+      "reference_evidence": "5年期人民币国债期货的推出，将与现有的债券通、互换通共同构成“现券-互换-期货”三位一体的完整风险管理闭环",
+      "reference_source": [
+        "新华财经"
+      ],
+      "importance": "core",
+      "importance_reason": "揭示该产品在现有互联互通机制中的核心机制作用，缺失会导致对风险管理闭环的理解不完整。"
+    },
+    {
+      "id": "R011",
+      "category": "product_significance",
+      "criterion": "证券时报报道指出该产品是离岸市场唯一的国债期货合约产品。",
+      "reference_evidence": "该产品作为离岸市场唯一的国债期货合约产品",
+      "reference_source": [
+        "证券时报"
+      ],
+      "importance": "important",
+      "importance_reason": "明确产品的稀缺性和市场定位，是理解其满足境外投资者需求的基础。"
+    },
+    {
+      "id": "R012",
+      "category": "product_significance",
+      "criterion": "证券时报报道指出该产品旨在满足境外投资者日益增长的利率风险管理需求。",
+      "reference_evidence": "旨在满足境外投资者日益增长的利率风险管理",
+      "reference_source": [
+        "证券时报"
+      ],
+      "importance": "important",
+      "importance_reason": "明确产品的直接服务对象和核心功能之一。"
+    },
+    {
+      "id": "R013",
+      "category": "product_significance",
+      "criterion": "证券时报报道指出该产品旨在满足境外投资者日益增长的交易需求。",
+      "reference_evidence": "及交易需求",
+      "reference_source": [
+        "证券时报"
+      ],
+      "importance": "important",
+      "importance_reason": "明确产品的直接服务对象和核心功能之二。"
+    },
+    {
+      "id": "R014",
+      "category": "product_significance",
+      "criterion": "证券时报报道指出推出五年期国债期货是推动香港成为离岸人民币枢纽的重要一步。",
+      "reference_evidence": "推出五年期国债期货是推动香港成为离岸人民币枢纽",
+      "reference_source": [
+        "证券时报"
+      ],
+      "importance": "important",
+      "importance_reason": "揭示产品对香港离岸人民币枢纽建设的战略意义。"
+    },
+    {
+      "id": "R015",
+      "category": "product_significance",
+      "criterion": "证券时报报道指出推出五年期国债期货是推动香港成为风险管理中心的重要一步。",
+      "reference_evidence": "及风险管理中心的重要一步",
+      "reference_source": [
+        "证券时报"
+      ],
+      "importance": "important",
+      "importance_reason": "揭示产品对香港风险管理中心建设的战略意义。"
+    },
+    {
+      "id": "R016",
+      "category": "product_design",
+      "criterion": "根据香港证监会披露，首个上市的5年期国债期货采用现金结算方式。",
+      "reference_evidence": "首个上市的5年期国债期货将采用现金结算",
+      "reference_source": [
+        "观点网",
+        "彭博社"
+      ],
+      "importance": "core",
+      "importance_reason": "现金结算是该产品的核心交割机制，缺失会导致对产品基本设计的理解不完整。"
+    },
+    {
+      "id": "R017",
+      "category": "product_design",
+      "criterion": "根据香港证监会披露，首个上市的5年期国债期货价格按一篮子中国国债厘定。",
+      "reference_evidence": "价格按一篮子中国国债厘定",
+      "reference_source": [
+        "观点网"
+      ],
+      "importance": "core",
+      "importance_reason": "价格厘定基准是产品定价机制的核心事实。"
+    },
+    {
+      "id": "R018",
+      "category": "product_design",
+      "criterion": "在岸国债期货品种采用实物交割的方式。",
+      "reference_evidence": "而在岸品种采用实物交割的方式",
+      "reference_source": [
+        "观点网"
+      ],
+      "importance": "important",
+      "importance_reason": "提供与在岸品种的对比，有助于理解离岸产品设计的差异化。"
+    },
+    {
+      "id": "R019",
+      "category": "product_design",
+      "criterion": "香港5年期国债期货合约金额为50万元人民币。",
+      "reference_evidence": "香港国债期货合约金额为50万元人民币",
+      "reference_source": [
+        "观点网",
+        "彭博社"
+      ],
+      "importance": "core",
+      "importance_reason": "合约金额是产品设计的核心参数，缺失会导致无法评估产品门槛和规模。"
+    },
+    {
+      "id": "R020",
+      "category": "product_design",
+      "criterion": "香港5年期国债期货合约金额仅为在岸同期限品种的一半。",
+      "reference_evidence": "仅为在岸同期限品种的一半",
+      "reference_source": [
+        "观点网"
+      ],
+      "importance": "important",
+      "importance_reason": "通过与在岸品种的对比，凸显离岸合约设计对境外投资者资金门槛的降低。"
+    },
+    {
+      "id": "R021",
+      "category": "product_design",
+      "criterion": "香港5年期国债期货的交易时间长于在岸市场。",
+      "reference_evidence": "其交易时间长于在岸市场",
+      "reference_source": [
+        "观点网"
+      ],
+      "importance": "important",
+      "importance_reason": "交易时间是产品交易机制的重要属性，影响投资者的交易安排。"
+    },
+    {
+      "id": "R022",
+      "category": "product_design",
+      "criterion": "彭博社报道指出香港国债期货跟踪在岸尾盘交易。",
+      "reference_evidence": "跟踪在岸尾盘交易",
+      "reference_source": [
+        "彭博社"
+      ],
+      "importance": "important",
+      "importance_reason": "明确产品的定价跟踪机制，是理解在岸与离岸市场联动的关键。"
+    },
+    {
+      "id": "R023",
+      "category": "market_view",
+      "criterion": "新华财经援引业内人士观点称，香港国债期货合约设计充分考虑了离岸市场特点和境外投资者交易习惯，更贴合离岸市场需求。",
+      "reference_evidence": "合约设计充分考虑了离岸市场的特点和境外投资者的交易习惯，更贴合离岸市场的需求",
+      "reference_source": [
+        "新华财经"
+      ],
+      "importance": "important",
+      "importance_reason": "提供市场对合约设计合理性的专业评价，有助于理解产品设计的初衷。"
+    },
+    {
+      "id": "R024",
+      "category": "market_data",
+      "criterion": "彭博社报道指出外资持有在岸国债规模已升至2万亿元。",
+      "reference_evidence": "外资持有在岸国债已升至2万亿元",
+      "reference_source": [
+        "彭博社"
+      ],
+      "importance": "important",
+      "importance_reason": "提供外资持仓的市场数据，是理解产品推出市场条件成熟度的重要背景。"
+    },
+    {
+      "id": "R025",
+      "category": "market_view",
+      "criterion": "彭博社报道认为当前推出国债期货的市场条件较此前成熟。",
+      "reference_evidence": "市场条件较此前成熟",
+      "reference_source": [
+        "彭博社"
+      ],
+      "importance": "important",
+      "importance_reason": "提供外媒对产品推出时机的市场条件评估。"
+    },
+    {
+      "id": "R026",
+      "category": "product_significance",
+      "criterion": "彭博社报道指出该产品旨在提供关键对冲工具。",
+      "reference_evidence": "该产品旨在提供关键对冲工具",
+      "reference_source": [
+        "彭博社"
+      ],
+      "importance": "important",
+      "importance_reason": "揭示产品在微观层面的核心功能。"
+    },
+    {
+      "id": "R027",
+      "category": "product_significance",
+      "criterion": "彭博社报道指出该产品旨在助力债券市场开放和人民币国际化。",
+      "reference_evidence": "助力债券市场开放和人民币国际化",
+      "reference_source": [
+        "彭博社"
+      ],
+      "importance": "important",
+      "importance_reason": "揭示产品在宏观战略层面的作用。"
+    },
+    {
+      "id": "R028",
+      "category": "market_view",
+      "criterion": "彭博社报道认为做市商和套保需求有望支持香港国债期货的初期流动性。",
+      "reference_evidence": "做市商和套保需求有望支持初期流动性",
+      "reference_source": [
+        "彭博社"
+      ],
+      "importance": "important",
+      "importance_reason": "提供对产品初期流动性的正面市场预期。"
+    },
+    {
+      "id": "R029",
+      "category": "risk_constraint",
+      "criterion": "彭博社报道认为低收益率环境可能会限制投资者对香港国债期货的交易兴趣。",
+      "reference_evidence": "但低收益率或限制交易兴趣",
+      "reference_source": [
+        "彭博社"
+      ],
+      "importance": "important",
+      "importance_reason": "提供独特的负面或风险观点，缺失会降低风险覆盖的完整性。"
+    },
+    {
+      "id": "R030",
+      "category": "market_view",
+      "criterion": "彭博社报道预计未来在岸与离岸国债市场联动将加强。",
+      "reference_evidence": "未来在岸与离岸市场联动料将加强",
+      "reference_source": [
+        "彭博社"
+      ],
+      "importance": "important",
+      "importance_reason": "提供对产品推出后市场格局演变的前瞻性观点。"
+    },
+    {
+      "id": "R031",
+      "category": "policy_background",
+      "criterion": "联合早报报道指出中国证监会于今年4月24日起允许合格境外投资者参与国债期货交易。",
+      "reference_evidence": "继中国证监会今年4月24日起允许合格境外投资者参与国债期货交易以来",
+      "reference_source": [
+        "联合早报"
+      ],
+      "importance": "core",
+      "importance_reason": "缺失会导致无法了解该产品推出的直接政策前置条件。"
+    },
+    {
+      "id": "R032",
+      "category": "policy_background",
+      "criterion": "联合早报报道认为港交所推出国债期货是北京推动人民币国际化的又一里程碑。",
+      "reference_evidence": "是北京推动人民币国际化的又一里程碑",
+      "reference_source": [
+        "联合早报"
+      ],
+      "importance": "important",
+      "importance_reason": "提供外媒对产品在人民币国际化战略中地位的评价。"
+    }
+  ]
+}

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 import sys
 from typing import Sequence
 
 from .agent import FinancialMediaAgent
+from .evaluation.snapshot import write_snapshot
 from .utils.config import Settings
 
 
@@ -27,6 +29,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     brief.add_argument("--query", required=True)
     brief.add_argument("--media-limit", type=int, default=None)
     brief.add_argument("--no-save", action="store_true")
+    brief.add_argument("--evaluation-case", type=Path, default=None)
     return parser.parse_args(list(sys.argv[1:] if argv is None else argv))
 
 
@@ -95,6 +98,9 @@ def _run_topic_brief(args: argparse.Namespace) -> int:
         f"正文高相关 {state.relevant_documents_count} 条。"
     )
     print(state.brief)
+    if args.evaluation_case:
+        documents_path, report_path = write_snapshot(state, args.evaluation_case)
+        print(f"评测材料：{documents_path}；{report_path}")
     if not args.no_save:
         output_path = agent.save_brief(state.brief)
         print(f"\n简报文件：{output_path}")

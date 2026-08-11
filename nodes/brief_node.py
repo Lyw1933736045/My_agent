@@ -1,4 +1,4 @@
-"""基于官方事实和媒体观点生成可追溯简报。"""
+"""基于媒体报道和社交平台材料生成可追溯简报。"""
 
 import json
 
@@ -9,14 +9,14 @@ from ..utils.text_processing import clean_markdown_tags
 
 class BriefNode(BaseNode):
     def run(self, input_data: dict) -> str:
-        # documents 是旧版字段，继续作为 official_documents 的兼容入口。
+        # 保留旧字段仅为兼容历史调用；主流程不再传入独立官方材料。
         documents = input_data.get("official_documents", input_data.get("documents", []))
         media_insights = input_data.get("media_insights", [])
         social_insights = input_data.get("social_insights", [])
         if not all(isinstance(items, list) for items in (documents, media_insights, social_insights)):
             raise ValueError("BriefNode 输入列表格式无效")
         if not documents and not media_insights and not social_insights:
-            raise ValueError("BriefNode 至少需要官方事实或媒体观点")
+            raise ValueError("BriefNode 至少需要媒体或社交平台材料")
         for document in documents:
             if not isinstance(document, dict) or "event_fact" not in document:
                 raise ValueError("BriefNode 输入缺少 event_fact")
@@ -33,7 +33,11 @@ class BriefNode(BaseNode):
         if not query:
             raise ValueError("BriefNode 缺少报告标题")
         payload = dict(input_data)
-        payload["official_documents"] = documents
+        # 只有历史调用显式提供时才保留该字段；新主流程完全从媒体内容提取官方信息。
+        if documents:
+            payload["official_documents"] = documents
+        else:
+            payload.pop("official_documents", None)
         payload["media_insights"] = media_insights
         payload["social_insights"] = social_insights
 
@@ -55,19 +59,6 @@ class BriefNode(BaseNode):
         else:
             lines = [title, "", *lines]
         brief = "\n".join(lines)
-        missing_sources = [
-            document
-            for document in documents
-            if document.get("official_url")
-            and document["official_url"] not in brief
-        ]
-        if missing_sources:
-            lines = [brief.rstrip(), "", "## 补充官方来源", ""]
-            for document in missing_sources:
-                fact = document.get("event_fact") or {}
-                title = fact.get("title") or f"候选文件 {document.get('document_id', '')}"
-                lines.append(f"- [{title}]({document['official_url']})")
-            brief = "\n".join(lines)
         missing_media = [
             insight for insight in media_insights + social_insights
             if insight.get("url") and insight["url"] not in brief

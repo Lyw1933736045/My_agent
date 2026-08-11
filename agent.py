@@ -338,7 +338,6 @@ class FinancialMediaAgent:
         state.brief = self.brief_node.run({
             "query": state.query,
             "topic": state.topic,
-            "official_documents": [],
             "media_insights": media_insights,
             "social_insights": social_insights,
         })

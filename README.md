@@ -12,9 +12,7 @@ CLI 仅处理参数与输出。
 
 ```bash
 cd /path/to/financial_single_agent
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
+python3 -m pip install -e .
 cp .env.example .env
 financial-single-agent media-search --query "央行最新货币政策"
 ```
@@ -60,6 +58,72 @@ python3 -m My_agent.evaluation.run_eval evaluate \
 结果写入 `result.json`，包含综合分、检索覆盖、报告覆盖和证据支撑率，以及缺口诊断。
 
 ## FastAPI 与前端
+
+### 前端启动流程
+
+在项目目录执行以下命令：
+
+```bash
+cd /Users/luoyuwen/Desktop/projects/My_agent
+python3 -m pip install -e .            # 首次安装或依赖更新时执行
+cp .env.example .env                  # 首次安装时执行，并填写 LLM/Tavily 密钥
+financial-single-agent-api
+```
+
+启动成功后，在浏览器打开：
+
+```text
+http://127.0.0.1:8000/
+```
+
+前端和 FastAPI 属于同一个服务，不需要先启动另一个前端进程。输入问题后点击
+「生成简报」即可；服务会在后台依次执行 NewsNow、RSS、Tavily 和微博等已启用来源。
+停止服务使用终端中的 `Ctrl-C`。
+
+如果关闭终端后服务仍占用 8000 端口，可以先查看监听进程：
+
+```bash
+lsof -nP -iTCP:8000 -sTCP:LISTEN
+```
+
+记下输出中的 `PID`，再正常结束该进程：
+
+```bash
+kill <PID>
+```
+
+确认端口仍未释放时，才使用强制结束：
+
+```bash
+kill -9 <PID>
+```
+
+端口释放后重新执行 `financial-single-agent-api` 即可。
+
+RSS 是否需要单独启动取决于 `.env` 中的 `RSSHUB_BASE`。当前默认值是
+`http://localhost:1200`，因此本地使用时需要先启动 RSSHub：
+
+1. 先启动本地 RSSHub（保持该终端运行）；
+2. 再打开新的终端，启动 `financial-single-agent-api`；
+3. 浏览器访问 `http://127.0.0.1:8000/`。
+
+如果将 `RSSHUB_BASE` 改成可用的远程 RSSHub 地址，则不需要单独启动本地 RSSHub；
+直接启动 `financial-single-agent-api` 即可。
+
+其他说明：
+
+- RSSHub 不可用时，RSS 会记录失败，但不会阻止 NewsNow、Tavily 或微博继续执行；
+- 暂时不使用 RSS 时，将 `config/media_sources.yaml` 中的 `rss.enabled` 设为 `false`。
+
+微博配置说明：
+
+- `weibo.enabled: true` 才会执行微博搜索；
+- Cookie 路径通过 `.env` 中的 `WEIBO_COOKIE_FILE` 配置，Cookie 文件不写入 YAML；
+- `weibo.comments.enabled: false` 时只抓取微博正文和点赞、评论、转发数量；
+- 改为 `true` 才会额外抓取选定帖子的热门评论；
+- 不配置有效 Cookie 时，微博 Provider 会单独失败，不影响其他来源。
+
+### API 启动命令
 
 安装项目后启动 API：
 

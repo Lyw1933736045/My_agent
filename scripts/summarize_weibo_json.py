@@ -69,7 +69,6 @@ def main() -> int:
     brief = BriefNode(llm).run({
         "query": data.get("input_question") or data.get("weibo_query") or "微博社交媒体简报",
         "topic": data.get("input_question") or data.get("weibo_query") or "微博社交媒体简报",
-        "official_documents": [],
         "media_insights": [],
         "social_insights": [asdict(item) for item in insights],
     })

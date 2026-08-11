@@ -39,11 +39,11 @@ class ApiTests(unittest.TestCase):
         )
         runner = MagicMock()
 
-        def discover(state, limit=None):
+        def discover(state, limit=None, cancel_check=None):
             self.assertEqual(state.provider_queries, {"weibo": "央行 降准"})
             return state
 
-        def finish(state):
+        def finish(state, cancel_check=None):
             state.brief = "# 研究报告"
             return state
 
@@ -84,7 +84,7 @@ class ApiTests(unittest.TestCase):
         )
 
         class _Agent:
-            def discover_from_plan(self, state, limit=None):
+            def discover_from_plan(self, state, limit=None, cancel_check=None):
                 from My_agent.tools.media_models import (
                     DiscoveryResult,
                     SourceFetchResult,
@@ -100,7 +100,7 @@ class ApiTests(unittest.TestCase):
                 )
                 return state
 
-            def complete(self, state):
+            def complete(self, state, cancel_check=None):
                 raise RuntimeError("没有成功读取的正文")
 
         new_agent.side_effect = [planner, _Agent()]

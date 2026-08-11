@@ -58,6 +58,7 @@ def select_candidates(
     *,
     limit: int,
     max_per_source: int,
+    max_per_source_overrides: dict[str, int] | None = None,
 ) -> tuple[list[MediaCandidate], dict[str, int]]:
     """合并多路重复候选，再按相关性和来源限额选择。"""
     by_url: dict[str, MediaCandidate] = {}
@@ -94,7 +95,11 @@ def select_candidates(
     selected = []
     source_counts: dict[str, int] = {}
     for _, _, candidate in sorted(scored, key=lambda item: (-item[0], item[1])):
-        if source_counts.get(candidate.source_name, 0) >= max_per_source:
+        source_limit = (max_per_source_overrides or {}).get(
+            candidate.discovered_by[0] if candidate.discovered_by else "",
+            max_per_source,
+        )
+        if source_counts.get(candidate.source_name, 0) >= source_limit:
             continue
         selected.append(candidate)
         source_counts[candidate.source_name] = source_counts.get(candidate.source_name, 0) + 1

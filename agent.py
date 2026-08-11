@@ -172,6 +172,7 @@ class FinancialMediaAgent:
         self,
         state: RunState,
         limit: int | None = None,
+        cancel_check=None,
     ) -> RunState:
         """使用已经审核的检索计划执行媒体发现。"""
         if not state.topic.strip():
@@ -189,17 +190,31 @@ class FinancialMediaAgent:
         if not providers:
             raise ValueError("没有可用的媒体 Provider")
         selection = media_config["selection"]
+        if cancel_check and cancel_check():
+            raise RuntimeError("任务已中止")
+        for provider in providers.values():
+            setter = getattr(provider, "set_cancel_check", None)
+            if setter:
+                setter(cancel_check)
         self._progress(f"② 正在依次运行：{' → '.join(providers)}")
         state.discovery = MediaDiscovery(providers).run(
             state.media_queries,
             limit=limit or int(selection.get("candidate_limit", 20)),
             max_per_source=int(selection.get("max_per_source", 3)),
             max_age_days=int(media_config["rss"].get("max_age_days", 30)),
+            max_per_source_overrides={
+                "weibo": max(
+                    int(weibo_config.get("target_posts", 20)) *
+                    int(weibo_config.get("max_search_pages", 3)),
+                    20,
+                )
+            } if (weibo_config := media_config.get("weibo") or {}).get("enabled", False) else None,
             provider_queries={
                 name: [query]
                 for name, query in state.provider_queries.items()
                 if isinstance(query, str) and query.strip() and name in providers
             },
+            cancel_check=cancel_check,
             progress=self.progress,
         )
         weibo_provider = providers.get("weibo")
@@ -220,7 +235,7 @@ class FinancialMediaAgent:
         state = self.discover_from_plan(state, limit)
         return self.complete(state)
 
-    def complete(self, state: RunState) -> RunState:
+    def complete(self, state: RunState, cancel_check=None) -> RunState:
         """基于媒体发现结果读取正文、分析并生成简报。"""
         if state.discovery is None:
             raise ValueError("尚未完成媒体发现")
@@ -230,9 +245,12 @@ class FinancialMediaAgent:
         news = [item for item in candidates if item.source_group != "social_media"]
         social = [item for item in candidates if item.source_group == "social_media"]
         selected = news[: int(selection.get("read_limit", 8))]
-        selected += social[: int(selection.get("social_read_limit", 5))]
+        social_limit = int(selection.get("social_read_limit", 5))
+        selected += social if social_limit <= 0 else social[:social_limit]
         state.read_attempted_count = len(selected)
         for index, candidate in enumerate(selected, 1):
+            if cancel_check and cancel_check():
+                raise RuntimeError("任务已中止")
             self._progress(
                 f"  [{index}/{len(selected)}] 读取：{candidate.source_name}｜"
                 f"{candidate.title[:50]}"
@@ -269,6 +287,8 @@ class FinancialMediaAgent:
             except Exception as exc:
                 self._progress(f"正文跳过：{candidate.title}（{exc}）")
         state.read_success_count = len(state.selected_documents)
+        if cancel_check and cancel_check():
+            raise RuntimeError("任务已中止")
         if not state.selected_documents:
             raise ValueError("没有成功读取的正文")
 
@@ -284,6 +304,8 @@ class FinancialMediaAgent:
             "max_content_chars": int(selection.get("content_filter_max_chars", 3_000)),
             "model_min_score": int(selection.get("relevance_model_min_score", 60)),
         })
+        if cancel_check and cancel_check():
+            raise RuntimeError("任务已中止")
         relevant_documents = [
             document
             for document, decision in zip(
@@ -303,6 +325,8 @@ class FinancialMediaAgent:
             raise ValueError("没有通过正文相关性复核的文章")
 
         state.insights = self.media_node.run(relevant_documents)
+        if cancel_check and cancel_check():
+            raise RuntimeError("任务已中止")
         media_insights = [
             asdict(item) for item in state.insights
             if item.source_group != "social_media"
@@ -318,6 +342,8 @@ class FinancialMediaAgent:
             "media_insights": media_insights,
             "social_insights": social_insights,
         })
+        if cancel_check and cancel_check():
+            raise RuntimeError("任务已中止")
         return state
 
     @staticmethod

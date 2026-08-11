@@ -18,8 +18,10 @@ class MediaDiscovery:
         *,
         limit: int = 20,
         max_per_source: int = 3,
+        max_per_source_overrides: dict[str, int] | None = None,
         max_age_days: int | None = None,
         provider_queries: dict[str, list[str]] | None = None,
+        cancel_check=None,
         progress=None,
     ) -> DiscoveryResult:
         if not queries:
@@ -36,6 +38,8 @@ class MediaDiscovery:
             if progress:
                 progress(f"开始 {name} 发现……")
             try:
+                if cancel_check and cancel_check():
+                    raise RuntimeError("任务已中止")
                 effective_queries = (
                     provider_queries.get(name, queries)
                     if provider_queries else queries
@@ -45,6 +49,8 @@ class MediaDiscovery:
                     limit=max(limit * 3, 20),
                     progress=progress,
                 )
+                if cancel_check and cancel_check():
+                    raise RuntimeError("任务已中止")
                 counts[name] = len(items)
                 raw.extend(items)
                 diagnostics = getattr(provider, "diagnostics", None)
@@ -88,6 +94,8 @@ class MediaDiscovery:
                 if progress:
                     progress(f"{name} 完成：{len(items)} 条")
             except Exception as exc:
+                if cancel_check and cancel_check():
+                    raise
                 errors[name] = str(exc)
                 sources.append(
                     SourceFetchResult(
@@ -132,6 +140,7 @@ class MediaDiscovery:
             queries,
             limit=limit,
             max_per_source=max_per_source,
+            max_per_source_overrides=max_per_source_overrides,
         )
         stats = {
             **{f"{name}_count": count for name, count in counts.items()},

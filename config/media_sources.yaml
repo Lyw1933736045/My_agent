@@ -211,7 +211,7 @@ tavily:
 
 # 微博桌面搜索；Cookie 只通过项目外部文件提供，禁止写入本配置。
 weibo:
-  enabled: false
+  enabled: true
   cookie_file: "${WEIBO_COOKIE_FILE}"
   search_url: "https://s.weibo.com/weibo"
   comments_url: "https://weibo.com/ajax/statuses/buildComments"
@@ -230,7 +230,8 @@ weibo:
 selection:
   candidate_limit: 20
   read_limit: 8
-  social_read_limit: 5
+  # 0表示分析已抓取的全部社交媒体候选。
+  social_read_limit: 0
   max_per_source: 3
   relevance_model_min_score: 30
   content_filter_max_chars: 5000

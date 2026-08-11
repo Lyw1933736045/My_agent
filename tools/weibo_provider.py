@@ -205,6 +205,23 @@ class WeiboProvider:
         self.diagnostics = ProviderDiagnostics()
         self.raw_results: list[dict[str, Any]] = []
         self.request_count = 0
+        self.cancel_check = None
+
+    def set_cancel_check(self, cancel_check) -> None:
+        self.cancel_check = cancel_check
+
+    def _ensure_active(self) -> None:
+        if self.cancel_check and self.cancel_check():
+            raise RuntimeError("任务已中止")
+
+    def _wait_interval(self, seconds: float) -> None:
+        end = time.monotonic() + max(0.0, seconds)
+        while True:
+            self._ensure_active()
+            remaining = end - time.monotonic()
+            if remaining <= 0:
+                return
+            time.sleep(min(0.25, remaining))
 
     def search(self, queries: list[str], limit: int = 20, progress=None) -> list[MediaCandidate]:
         del limit  # 网络停止条件由 target_posts/max_search_pages 独立控制。
@@ -249,6 +266,7 @@ class WeiboProvider:
         return cookie
 
     def _get(self, url: str, *, cookie: str, params: dict[str, object]):
+        self._ensure_active()
         headers = dict(self.DEFAULT_HEADERS)
         headers["Cookie"] = cookie
         headers["Referer"] = "https://s.weibo.com/"
@@ -278,7 +296,7 @@ class WeiboProvider:
         seen: set[str] = set()
         for page in range(1, self.max_search_pages + 1):
             if page > 1:
-                time.sleep(random.uniform(
+                self._wait_interval(random.uniform(
                     self.request_interval_min, self.request_interval_max
                 ))
             try:
@@ -345,7 +363,7 @@ class WeiboProvider:
         )[: self.max_comment_posts]
         for index, post in enumerate(targets):
             if index:
-                time.sleep(random.uniform(
+                self._wait_interval(random.uniform(
                     self.comment_interval_min, self.comment_interval_max
                 ))
             fetch = post["comments_fetch"]

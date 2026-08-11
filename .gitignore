@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 .venv/
 __pycache__/
 *.py[cod]
@@ -6,3 +8,23 @@ reports/
 *.egg-info/
 build/
 dist/
+
+# 本地凭证与 Cookie
+*cookie*
+**/Cookie.txt
+weibo_cookie.txt
+
+# 本地数据库与运行数据
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+data/evaluations/
+
+# 手动抓取和运行结果
+weibo_raw.json
+*_standalone*.json
+*.log
+
+# macOS
+.DS_Store

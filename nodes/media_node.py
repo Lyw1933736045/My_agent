@@ -27,16 +27,26 @@ class MediaNode(BaseNode):
         for document in input_data:
             if not isinstance(document, MediaDocument) or not document.content.strip():
                 raise ValueError("MediaNode 需要包含真实正文的 MediaDocument")
-            payload.append(
-                {
-                    "title": document.candidate.title,
-                    "source_name": document.candidate.source_name,
-                    "url": document.final_url,
-                    "published_at": document.candidate.published_at,
-                    "source_group": document.candidate.source_group,
-                    "content": document.content,
+            item = {
+                "title": document.candidate.title,
+                "source_name": document.candidate.source_name,
+                "url": document.final_url,
+                "published_at": document.candidate.published_at,
+                "source_group": document.candidate.source_group,
+                "content": document.content,
+            }
+            if document.candidate.source_group == "social_media":
+                metadata = document.candidate.metadata
+                item["social_metrics"] = {
+                    key: metadata.get(key)
+                    for key in (
+                        "likes_count", "comments_count", "reposts_count",
+                        "platform_rank", "search_sort",
+                    )
+                    if key in metadata
                 }
-            )
+                item["comments"] = metadata.get("comments", [])
+            payload.append(item)
         response = self.llm_client.invoke(
             SYSTEM_PROMPT_MEDIA_ANALYSIS,
             json.dumps({"documents": payload}, ensure_ascii=False),
@@ -54,6 +64,22 @@ class MediaNode(BaseNode):
             url = _text(item.get("url"))
             if not title or not source_name or not url:
                 continue
+            matching_document = next(
+                (document for document in input_data if document.final_url == url),
+                None,
+            )
+            source_metadata = {}
+            if matching_document is not None and matching_document.candidate.source_group == "social_media":
+                candidate_metadata = matching_document.candidate.metadata
+                source_metadata = {
+                    key: candidate_metadata[key]
+                    for key in (
+                        "wid", "mblogid", "user_id", "user_name",
+                        "likes_count", "comments_count", "reposts_count",
+                        "platform_rank", "search_sort", "comments_fetch", "comments",
+                    )
+                    if key in candidate_metadata
+                }
             insights.append(
                 MediaInsight(
                     title=title,
@@ -65,6 +91,7 @@ class MediaNode(BaseNode):
                     interpretations=_text_list(item.get("interpretations")),
                     affected_parties=_text_list(item.get("affected_parties")),
                     risks_or_disagreements=_text_list(item.get("risks_or_disagreements")),
+                    metadata=source_metadata,
                 )
             )
         if not insights:

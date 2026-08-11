@@ -72,3 +72,4 @@ class MediaInsight:
     interpretations: list[str] = field(default_factory=list)
     affected_parties: list[str] = field(default_factory=list)
     risks_or_disagreements: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)

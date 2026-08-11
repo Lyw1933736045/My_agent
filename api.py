@@ -290,13 +290,15 @@ def _execute_run(run_id: str) -> None:
             provider_queries=dict(record.provider_queries),
         )
         agent = _new_agent(progress=progress)
-        state = agent.discover_from_plan(state)
+        state = agent.discover_from_plan(
+            state, cancel_check=cancel_event.is_set
+        )
         if cancel_event.is_set():
             raise _RunCanceled()
         sources = _sources_payload(state.discovery)
         _repository.save_source_results(run_id, sources)
         write_weibo_raw(state, _evaluation_dir(run_id))
-        result = agent.complete(state)
+        result = agent.complete(state, cancel_check=cancel_event.is_set)
         if cancel_event.is_set():
             raise _RunCanceled()
         write_snapshot(state, _evaluation_dir(run_id))
@@ -309,7 +311,10 @@ def _execute_run(run_id: str) -> None:
     except _RunCanceled:
         _repository.cancel(run_id)
     except Exception as exc:
-        _repository.fail(run_id, str(exc), source_results=sources or None)
+        if cancel_event.is_set():
+            _repository.cancel(run_id)
+        else:
+            _repository.fail(run_id, str(exc), source_results=sources or None)
 
 
 @app.get("/health")

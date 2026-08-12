@@ -21,7 +21,7 @@ class _SequenceLLM:
 
 
 class QueryPlanNodeTests(unittest.TestCase):
-    def test_limits_media_queries_to_five_and_deduplicates(self):
+    def test_limits_media_queries_to_three_and_deduplicates(self):
         node = QueryPlanNode(
             _FakeLLM(
                 {
@@ -39,15 +39,13 @@ class QueryPlanNodeTests(unittest.TestCase):
         )
         result = node.run({"query": "国务院有哪些新能源汽车支持政策？"})
         self.assertEqual(result["topic"], "新能源汽车支持政策")
-        self.assertEqual(len(result["media_queries"]), 5)
+        self.assertEqual(len(result["media_queries"]), 3)
         self.assertEqual(
             result["media_queries"],
             [
                 "新能源汽车 税收优惠",
                 "新能源汽车 购置税",
                 "新能源汽车 消费支持",
-                "新能源汽车 市场",
-                "不应保留",
             ],
         )
 
@@ -63,6 +61,7 @@ class QueryPlanNodeTests(unittest.TestCase):
         self.assertNotIn("official_queries", result)
         self.assertNotIn("search_queries", result)
         self.assertEqual(len(result["media_queries"]), 2)
+        self.assertEqual(result["provider_queries"]["tavily"], ["新能源车 政策影响", "车企 消费"])
         self.assertEqual(result["provider_queries"]["weibo"], "新能源车 政策影响")
 
     def test_returns_llm_generated_balanced_weibo_query(self):
@@ -75,7 +74,10 @@ class QueryPlanNodeTests(unittest.TestCase):
         ).run({"query": "研究测试主题"})
 
         self.assertEqual(
-            result["provider_queries"], {"weibo": "测试主体 核心事项"}
+            result["provider_queries"], {
+                "tavily": ["测试主体 核心事项", "测试对象 相关影响"],
+                "weibo": "测试主体 核心事项",
+            }
         )
 
     def test_accepts_single_item_array_wrapper(self):

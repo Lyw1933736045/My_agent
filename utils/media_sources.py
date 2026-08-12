@@ -38,6 +38,10 @@ def load_media_sources(config_path: str | Path = DEFAULT_CONFIG_PATH) -> dict:
     rss = _mapping(root.get("rss"), "rss")
     tavily = _mapping(root.get("tavily", {"enabled": False}), "tavily")
     weibo = _mapping(root.get("weibo", {"enabled": False}), "weibo")
+    adaptive_retrieval = _mapping(
+        root.get("adaptive_retrieval", {"enabled": False}),
+        "adaptive_retrieval",
+    )
     selection = _mapping(root.get("selection"), "selection")
     if not isinstance(newsnow.get("sources"), list):
         raise MediaSourcesConfigError("配置字段 newsnow.sources 必须是列表")
@@ -66,11 +70,20 @@ def load_media_sources(config_path: str | Path = DEFAULT_CONFIG_PATH) -> dict:
         raise MediaSourcesConfigError("配置字段 weibo.enabled 必须是布尔值")
     if weibo.get("enabled") and not str(weibo.get("cookie_file", "")).strip():
         raise MediaSourcesConfigError("启用 weibo 时必须配置 cookie_file")
+    if not isinstance(adaptive_retrieval.get("enabled", False), bool):
+        raise MediaSourcesConfigError("配置字段 adaptive_retrieval.enabled 必须是布尔值")
+    for field in ("tavily_min_valid_results", "weibo_min_valid_results"):
+        value = adaptive_retrieval.get(field)
+        if value is not None and (not isinstance(value, int) or value < 1):
+            raise MediaSourcesConfigError(
+                f"配置字段 adaptive_retrieval.{field} 必须是正整数"
+            )
     return {
         "newsnow": newsnow,
         "rss": rss,
         "tavily": tavily,
         "weibo": weibo,
+        "adaptive_retrieval": adaptive_retrieval,
         "selection": selection,
     }
 

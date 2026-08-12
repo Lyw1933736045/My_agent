@@ -59,6 +59,31 @@ def summarize(result: JudgeOutput) -> dict:
         (0.60 * core_report + 0.25 * important_report) / 0.85,
         1,
     )
+    # 向前端提供报告已经覆盖的 Reference 信息点。criterion 是从
+    # reference.md 拆出的 atomic rubric，比直接展示长篇原文更便于核对。
+    importance_order = {"core": 0, "important": 1, "bonus": 2}
+    reference_hits = []
+    for index, item in enumerate(result.coverage):
+        rubric = rubric_by_id.get(item.rubric_id)
+        if rubric is None or item.report.score <= 0:
+            continue
+        reference_hits.append({
+            "rubric_id": rubric.id,
+            "criterion": rubric.criterion,
+            "importance": rubric.importance,
+            "report_score": item.report.score,
+            "evidence": item.report.evidence,
+            "source_url": item.report.source_url,
+            "_index": index,
+        })
+    reference_hits.sort(
+        key=lambda item: (
+            importance_order.get(item["importance"], 99),
+            item["_index"],
+        )
+    )
+    for item in reference_hits:
+        item.pop("_index", None)
     return {
         "retrieval_coverage": retrieval,
         "report_coverage": report,
@@ -69,6 +94,9 @@ def summarize(result: JudgeOutput) -> dict:
         "overall_base_score": overall_base,
         "bonus_points": bonus_points,
         "overall_score": min(100.0, round(overall_base + bonus_points, 1)),
+        "reference_hit_count": len(reference_hits),
+        "reference_total_count": len(result.rubrics),
+        "reference_hits": reference_hits,
         "diagnosis": {
             "correctly_covered": diagnosis["correctly_covered"],
             "retrieval_miss": diagnosis["retrieval_miss"],

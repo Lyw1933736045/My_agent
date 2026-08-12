@@ -1,8 +1,14 @@
 version: 1
 
+# 首轮有效结果不足时，只执行一轮 Provider 专用补充检索。
+adaptive_retrieval:
+  enabled: true
+  tavily_min_valid_results: 3
+  weibo_min_valid_results: 2
+
 # NewsNow 提供各平台当前热榜；查询词会在本地匹配标题。
 newsnow:
-  enabled: true
+  enabled: false
   api_url: "https://newsnow.busiyi.world/api/s"
   timeout_seconds: 30
   max_retries: 1
@@ -73,10 +79,10 @@ newsnow:
 
 # RSS 用于补充不一定进入热榜的最新媒体文章。
 rss:
-  enabled: true
+  enabled: false
   timeout_seconds: 25
   max_content_bytes: 6000000
-  max_age_days: 30
+  max_age_days: 15
   default_max_items: 0
   request_interval_min_seconds: 0.5
   request_interval_max_seconds: 1.0
@@ -88,12 +94,12 @@ rss:
     # =========================
     # 官方及权威媒体
     # =========================
-    - id: "cctv-xwlb"
-      name: "央视新闻-新闻联播"
-      url: "${RSSHUB_BASE}/cctv/xwlb"
-      layer: "media"
-      source_group: "official_media"
-      enabled: true
+    # - id: "cctv-xwlb"
+    #   name: "央视新闻-新闻联播"
+    #   url: "${RSSHUB_BASE}/cctv/xwlb"
+    #   layer: "media"
+    #   source_group: "official_media"
+    #   enabled: true
 
     - id: "people-finance"
       name: "人民网-财经"
@@ -178,40 +184,78 @@ rss:
     # =========================
     # 社交平台
     # =========================
-    - id: "zhihu-hot"
-      name: "知乎-热榜"
-      url: "${RSSHUB_BASE}/zhihu/hot"
-      layer: "media"
-      source_group: "social_media"
-      enabled: true
+    # - id: "zhihu-hot"
+    #   name: "知乎-热榜"
+    #   url: "${RSSHUB_BASE}/zhihu/hot"
+    #   layer: "media"
+    #   source_group: "social_media"
+    #   enabled: true
 
     # =========================
     # 动态关键词路由（默认关闭）
     # =========================
-    - id: "gelonghui-keyword"
-      name: "格隆汇-关键词"
-      url_template: "${RSSHUB_BASE}/gelonghui/keyword/{keyword}"
-      layer: "media"
-      source_group: "news_media"
-      enabled: false
+    # - id: "gelonghui-keyword"
+    #   name: "格隆汇-关键词"
+    #   url_template: "${RSSHUB_BASE}/gelonghui/keyword/{keyword}"
+    #   layer: "media"
+    #   source_group: "news_media"
+    #   enabled: true
 
-    - id: "eastmoney-search"
-      name: "东方财富-关键词搜索"
-      url_template: "${RSSHUB_BASE}/eastmoney/search/{keyword}"
-      layer: "media"
-      source_group: "news_media"
-      enabled: false
+    # - id: "eastmoney-search"
+    #   name: "东方财富-关键词搜索"
+    #   url_template: "${RSSHUB_BASE}/eastmoney/search/{keyword}"
+    #   layer: "media"
+    #   source_group: "news_media"
+    #   enabled: true
 
 # Tavily 在 NewsNow、RSS 完成后执行，只用于发现 URL；简报仍重新抓取正文。
 tavily:
   enabled: true
-  max_results_per_query: 5
+  max_results_per_query: 10
+  targeted_search_enabled: true
+  targeted_max_results: 20
+  domestic_finance_domains:
+    - cls.cn
+    - yicai.com
+    - stcn.com
+    - cnstock.com
+    - cs.com.cn
+    - zqrb.cn
+    - 21jingji.com
+    - qhrb.com.cn
+    - cnfin.com
+    - nbd.com.cn
+    - caixin.com
+    - jwview.com
+    - bjnews.com.cn
+    - wallstreetcn.com
+    - gelonghui.com
+    - jin10.com
+    - cnr.cn
+    - chinanews.com.cn
+  overseas_finance_domains:
+    - scmp.com
+    - zaobao.com.sg
+    - hkcd.com.hk
+    - wenweipo.com
+  trusted_media_domains:
+    - cls.cn
+    - yicai.com
+    - stcn.com
+    - cnstock.com
+    - nbd.com.cn
+    - wallstreetcn.com
+    - gelonghui.com
+    - jin10.com
+    - thepaper.cn
+    - finance.people.com.cn
+    - chinanews.com.cn
   search_depth: "basic"
-  # days: 7
+  days: 60
 
 # 微博桌面搜索；Cookie 只通过项目外部文件提供，禁止写入本配置。
 weibo:
-  enabled: true
+  enabled: false
   cookie_file: "${WEIBO_COOKIE_FILE}"
   search_url: "https://s.weibo.com/weibo"
   comments_url: "https://weibo.com/ajax/statuses/buildComments"
@@ -222,14 +266,15 @@ weibo:
   request_interval_max_seconds: 8
   trust_env_proxy: false
   comments:
-    enabled: true
+    enabled: false
     max_posts: 2
     request_interval_min_seconds: 5
     request_interval_max_seconds: 10
 
 selection:
-  candidate_limit: 20
-  read_limit: 8
+  candidate_limit: 100
+  read_limit: 20
+  max_per_source: 5
   # 0表示分析已抓取的全部社交媒体候选。
   social_read_limit: 0
   max_per_source: 3

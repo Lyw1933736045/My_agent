@@ -285,7 +285,7 @@ class TavilyMediaProviderTests(unittest.TestCase):
         )
         results = provider.search(["股指期货 政策"], limit=10)
         self.assertEqual(len(results), 2)
-        self.assertEqual(results[0].discovered_by, ("tavily",))
+        self.assertEqual(results[0].discovered_by, ("tavily_general",))
         self.assertEqual(results[0].query, "股指期货 政策")
         by_url = {item.url: item for item in results}
         self.assertEqual(

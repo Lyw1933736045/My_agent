@@ -23,6 +23,7 @@ class RunRecord:
     report: str | None
     error: str | None
     source_results: list[dict]
+    retrieval_reflection: dict
 
 
 class RunRepository:
@@ -109,12 +110,41 @@ class RunRepository:
                     created_at TEXT NOT NULL,
                     FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE
                 );
+
+                CREATE TABLE IF NOT EXISTS media_candidates (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    snippet TEXT NOT NULL DEFAULT '',
+                    source TEXT NOT NULL,
+                    provider TEXT NOT NULL,
+                    source_group TEXT NOT NULL DEFAULT 'news_media',
+                    query TEXT,
+                    published_at TEXT,
+                    content TEXT,
+                    fetch_status TEXT NOT NULL DEFAULT 'pending',
+                    fetch_error TEXT,
+                    final_url TEXT,
+                    content_type TEXT,
+                    fetched_at TEXT,
+                    analysis_status TEXT NOT NULL DEFAULT 'pending',
+                    analysis_reason TEXT,
+                    duplicate_of_id INTEGER,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(run_id, url),
+                    FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE
+                );
                 """
             )
             self._ensure_column(connection, "runs", "source_results", "TEXT")
-            self._ensure_column(
-                connection, "query_plans", "provider_queries", "TEXT"
-            )
+            self._ensure_column(connection, "runs", "retrieval_reflection", "TEXT")
+            self._ensure_column(connection, "query_plans", "provider_queries", "TEXT")
+            self._ensure_column(connection, "media_candidates", "source_group", "TEXT NOT NULL DEFAULT 'news_media'")
+            self._ensure_column(connection, "media_candidates", "analysis_status", "TEXT NOT NULL DEFAULT 'pending'")
+            self._ensure_column(connection, "media_candidates", "analysis_reason", "TEXT")
+            self._ensure_column(connection, "media_candidates", "duplicate_of_id", "INTEGER")
             now = self._now()
             connection.execute(
                 """
@@ -128,6 +158,61 @@ class RunRepository:
                 (now,),
             )
 
+    def save_candidates(self, run_id: str, candidates: list[dict]) -> None:
+        now = self._now()
+        with self._connection() as connection:
+            for item in candidates:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO media_candidates
+                    (run_id, title, url, snippet, source, provider, source_group,
+                     query, published_at, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (run_id, item["title"], item["url"], item.get("snippet", ""),
+                     item.get("source", ""), item.get("provider", ""),
+                     item.get("source_group", "news_media"), item.get("query"),
+                     item.get("published_at"), now, now),
+                )
+
+    def update_candidate_analysis(
+        self,
+        candidate_id: int,
+        status: str,
+        reason: str | None = None,
+        duplicate_of_id: int | None = None,
+    ) -> None:
+        with self._connection() as connection:
+            connection.execute(
+                """
+                UPDATE media_candidates
+                SET analysis_status = ?, analysis_reason = ?, duplicate_of_id = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (status, reason, duplicate_of_id, self._now(), candidate_id),
+            )
+
+    def update_candidate_fetch(self, run_id: str, url: str, **values) -> None:
+        allowed = {"content", "fetch_status", "fetch_error", "final_url",
+                   "content_type", "fetched_at"}
+        values = {key: value for key, value in values.items() if key in allowed}
+        if not values:
+            return
+        values["updated_at"] = self._now()
+        assignments = ", ".join(f"{key} = ?" for key in values)
+        with self._connection() as connection:
+            connection.execute(
+                f"UPDATE media_candidates SET {assignments} WHERE run_id = ? AND url = ?",
+                (*values.values(), run_id, url),
+            )
+
+    def list_candidates(self, run_id: str) -> list[dict]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM media_candidates WHERE run_id = ? ORDER BY id", (run_id,)
+            ).fetchall()
+        return [dict(row) for row in rows]
     def create(
         self,
         *,
@@ -195,6 +280,10 @@ class RunRepository:
             report=row["report"],
             error=row["error_message"],
             source_results=self._loads_sources(row["source_results"]),
+            retrieval_reflection=(
+                json.loads(row["retrieval_reflection"])
+                if row["retrieval_reflection"] else {}
+            ),
         )
 
     def approve(self, run_id: str, approved_queries: list[str]) -> bool:
@@ -245,6 +334,18 @@ class RunRepository:
                 WHERE id = ?
                 """,
                 (payload, now, run_id),
+            )
+
+    def save_retrieval_reflection(self, run_id: str, trace: dict) -> None:
+        now = self._now()
+        with self._connection() as connection:
+            connection.execute(
+                """
+                UPDATE runs
+                SET retrieval_reflection = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (json.dumps(trace, ensure_ascii=False), now, run_id),
             )
 
     def complete(

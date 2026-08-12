@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from .media_models import DiscoveryResult, MediaCandidate, SourceFetchResult
-from ..utils.dedup import select_candidates
+from ..utils.dedup import canonical_url, select_candidates, valid_provider_candidates
 
 
 class MediaDiscovery:
@@ -21,6 +21,10 @@ class MediaDiscovery:
         max_per_source_overrides: dict[str, int] | None = None,
         max_age_days: int | None = None,
         provider_queries: dict[str, list[str]] | None = None,
+        topic: str = "",
+        retrieval_check_node=None,
+        adaptive_retrieval_node=None,
+        adaptive_config: dict | None = None,
         cancel_check=None,
         progress=None,
     ) -> DiscoveryResult:
@@ -34,16 +38,21 @@ class MediaDiscovery:
         sources: list[SourceFetchResult] = []
         counts = {name: 0 for name in self.providers}
         provider_stats: dict[str, int] = {}
+        provider_candidates: dict[str, list[MediaCandidate]] = {}
+        provider_raw_results: dict[str, list[dict]] = {}
+        effective_provider_queries: dict[str, list[str]] = {}
         for name, provider in self.providers.items():
+            effective_queries = (
+                provider_queries.get(name, queries)
+                if provider_queries else queries
+            )
+            effective_provider_queries[name] = list(effective_queries)
+            provider_candidates[name] = []
             if progress:
                 progress(f"开始 {name} 发现……")
             try:
                 if cancel_check and cancel_check():
                     raise RuntimeError("任务已中止")
-                effective_queries = (
-                    provider_queries.get(name, queries)
-                    if provider_queries else queries
-                )
                 items = provider.search(
                     effective_queries,
                     limit=max(limit * 3, 20),
@@ -52,6 +61,10 @@ class MediaDiscovery:
                 if cancel_check and cancel_check():
                     raise RuntimeError("任务已中止")
                 counts[name] = len(items)
+                provider_candidates[name] = list(items)
+                provider_raw_results[name] = list(
+                    getattr(provider, "raw_results", [])
+                )
                 raw.extend(items)
                 diagnostics = getattr(provider, "diagnostics", None)
                 if diagnostics is not None:
@@ -108,6 +121,97 @@ class MediaDiscovery:
                 if progress:
                     progress(f"{name} 失败：{exc}")
 
+        retrieval_reflection: dict[str, dict] = {}
+        adaptive = adaptive_config or {}
+        if (
+            adaptive.get("enabled", False)
+            and retrieval_check_node is not None
+            and adaptive_retrieval_node is not None
+        ):
+            retrieval_reflection = retrieval_check_node.run({
+                "provider_candidates": provider_candidates,
+                "provider_queries": effective_provider_queries,
+                "thresholds": {
+                    "tavily": int(adaptive.get("tavily_min_valid_results", 3)),
+                    "weibo": int(adaptive.get("weibo_min_valid_results", 2)),
+                },
+            })
+            retry_queries = {}
+            if any(
+                item.get("adaptive_triggered")
+                for item in retrieval_reflection.values()
+            ):
+                retry_queries = adaptive_retrieval_node.run({
+                    "topic": topic,
+                    "provider_candidates": provider_candidates,
+                    "trace": retrieval_reflection,
+                })
+            for name, queries_for_retry in retry_queries.items():
+                provider = self.providers.get(name)
+                if provider is None or not queries_for_retry:
+                    continue
+                if cancel_check and cancel_check():
+                    raise RuntimeError("任务已中止")
+                if progress:
+                    progress(
+                        f"{name} 首轮有效结果不足，执行一次自适应补搜："
+                        f"{'；'.join(queries_for_retry)}"
+                    )
+                try:
+                    retry_items = provider.search(
+                        queries_for_retry,
+                        limit=max(limit * 3, 20),
+                        progress=progress,
+                    )
+                    provider_candidates.setdefault(name, []).extend(retry_items)
+                    if hasattr(provider, "raw_results"):
+                        merged_raw_results: list[dict] = []
+                        seen_raw: set[str] = set()
+                        for item in (
+                            provider_raw_results.get(name, [])
+                            + list(getattr(provider, "raw_results", []))
+                        ):
+                            key = str(item.get("wid") or item.get("url") or "")
+                            if not key or key in seen_raw:
+                                continue
+                            seen_raw.add(key)
+                            merged_raw_results.append(item)
+                        provider.raw_results = merged_raw_results
+                        provider_raw_results[name] = merged_raw_results
+                    raw.extend(retry_items)
+                    counts[name] = len(provider_candidates[name])
+                    trace = retrieval_reflection[name]
+                    trace["retry_valid_count"] = len(
+                        valid_provider_candidates(name, retry_items)
+                    )
+                    trace["final_valid_count"] = len(
+                        valid_provider_candidates(name, provider_candidates[name])
+                    )
+                    if progress:
+                        progress(
+                            f"{name} 自适应补搜完成：新增有效 "
+                            f"{trace['retry_valid_count']} 条，合并后 "
+                            f"{trace['final_valid_count']} 条"
+                        )
+                except Exception as exc:
+                    retrieval_reflection[name]["retry_error"] = str(exc)
+                    errors[f"{name}/adaptive"] = str(exc)
+                    if progress:
+                        progress(f"{name} 自适应补搜失败：{exc}")
+
+        # Stage 1 snapshot: keep every valid candidate before relevance/title filtering.
+        stage1 = []
+        seen_urls: set[str] = set()
+        for candidate in raw:
+            url = candidate.url.strip()
+            key = canonical_url(url) if url else ""
+            if not key or key in seen_urls:
+                continue
+            seen_urls.add(key)
+            stage1.append(candidate)
+            if len(stage1) >= max(limit * 3, 20):
+                break
+
         filtered = []
         time_filtered_count = 0
         for candidate in raw:
@@ -150,4 +254,7 @@ class MediaDiscovery:
             **dedup_stats,
             "selected_count": len(selected),
         }
-        return DiscoveryResult(selected, stats, errors, tuple(sources))
+        return DiscoveryResult(
+            selected, stats, errors, tuple(sources), stage1,
+            provider_candidates, retrieval_reflection,
+        )

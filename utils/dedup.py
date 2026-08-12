@@ -36,6 +36,35 @@ def normalized_title(title: str) -> str:
     return _TITLE_NOISE.sub("", title.casefold())
 
 
+def valid_provider_candidates(
+    provider: str, candidates: list[MediaCandidate]
+) -> list[MediaCandidate]:
+    """按 Retrieval Reflection 第一版规则返回去重后的有效结果。"""
+    valid: list[MediaCandidate] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        if not isinstance(candidate, MediaCandidate):
+            continue
+        parsed = urlparse(candidate.url.strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            continue
+        if provider == "tavily":
+            if not candidate.title.strip():
+                continue
+            key = canonical_url(candidate.url)
+        elif provider == "weibo":
+            if not (candidate.snippet.strip() or candidate.title.strip()):
+                continue
+            key = candidate.guid or canonical_url(candidate.url)
+        else:
+            continue
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        valid.append(candidate)
+    return valid
+
+
 def match_query(candidate: MediaCandidate, queries: list[str]) -> tuple[int, str | None]:
     text = f"{candidate.title} {candidate.snippet}".casefold()
     best_score = 0

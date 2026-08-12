@@ -23,6 +23,11 @@ def write_snapshot(state: RunState, directory: Path) -> tuple[Path, Path]:
     """只保存通过正文复核、实际交给后续节点的正文片段。"""
     directory.mkdir(parents=True, exist_ok=True)
     write_weibo_raw(state, directory)
+    if state.retrieval_reflection:
+        (directory / "retrieval_reflection.json").write_text(
+            json.dumps(state.retrieval_reflection, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
     relevant = {
         id(document): decision.relevant
         for document, decision in zip(state.selected_documents, state.content_decisions)

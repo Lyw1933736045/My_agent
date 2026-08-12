@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from .base_node import BaseNode
-from ..prompts import SYSTEM_PROMPT_CONTENT_RELEVANCE
+from ..prompts import SYSTEM_PROMPT_CONTENT_RELEVANCE, SYSTEM_PROMPT_METADATA_RELEVANCE
 from ..tools.media_models import MediaCandidate, MediaDocument, RelevanceDecision
 from ..utils.text_processing import extract_json
 
@@ -21,7 +21,11 @@ def _terms(candidate: MediaCandidate, queries: list[str]) -> tuple[str, ...]:
 
 
 class CandidateFilterNode(BaseNode):
-    """只让正文高相关候选进入观点提取与简报节点。"""
+    """只让高相关候选进入观点提取与简报节点。
+
+    metadata 阶段可以筛选标题/摘要；content 阶段筛选真实正文。
+    当前 Agent 的 complete() 重点使用 content 阶段。
+    """
 
     def run(self, input_data: dict) -> list[RelevanceDecision]:
         stage = str(input_data.get("stage", "")).strip()
@@ -29,6 +33,7 @@ class CandidateFilterNode(BaseNode):
         queries = input_data.get("queries")
         if not topic or not isinstance(queries, list) or not queries:
             raise ValueError("CandidateFilterNode 缺少 topic 或 queries")
+        # 根据 stage 决定当前是在筛选候选元数据，还是筛选网页正文。
         if stage == "content":
             return self._filter_content(
                 input_data.get("documents"),
@@ -37,7 +42,22 @@ class CandidateFilterNode(BaseNode):
                 int(input_data.get("max_content_chars", 6_000)),
                 int(input_data.get("model_min_score", 60)),
             )
-        raise ValueError("CandidateFilterNode.stage 必须是 content")
+        if stage == "metadata":
+            candidates = input_data.get("candidates")
+            if not isinstance(candidates, list):
+                raise ValueError("候选筛选需要 candidates 列表")
+            payload = [{
+                "index": index, "title": item.title, "snippet": item.snippet,
+            } for index, item in enumerate(candidates) if isinstance(item, MediaCandidate)]
+            parsed = self._invoke(SYSTEM_PROMPT_METADATA_RELEVANCE, {
+                "topic": topic, "queries": queries, "candidates": payload,
+            })
+            results = self._result_map(parsed)
+            return [self._decision_from_item(
+                item, "metadata", results.get(index), _terms(item, queries),
+                "模型未返回该候选的判断", int(input_data.get("model_min_score", 50)),
+            ) for index, item in enumerate(candidates)]
+        raise ValueError("CandidateFilterNode.stage 必须是 metadata 或 content")
 
     def _filter_content(
         self,
@@ -105,6 +125,7 @@ class CandidateFilterNode(BaseNode):
             return RelevanceDecision(candidate, stage, False, 0, missing_reason, matched)
         raw_score = item.get("score", 0)
         score = max(0, min(100, int(raw_score))) if isinstance(raw_score, (int, float)) else 0
+        # 模型必须明确判定 relevant=True，并且分数达到阈值，才算通过。
         relevant = item.get("relevant") is True and score >= min_score
         reason = item.get("reason")
         if not isinstance(reason, str) or not reason.strip():

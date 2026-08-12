@@ -42,6 +42,9 @@ RunStatus = Literal[
 
 class CreatePlanRequest(BaseModel):
     query: str = Field(min_length=2, max_length=500)
+    sources: dict[str, bool] = Field(default_factory=lambda: {
+        "newsnow": False, "rss": False, "tavily": True, "weibo": False
+    })
 
 
 class ApprovePlanRequest(BaseModel):
@@ -74,6 +77,13 @@ class RunResponse(BaseModel):
     report: str | None = None
     sources: list[SourceResult] = Field(default_factory=list)
     source_summary: dict[str, int] = Field(default_factory=dict)
+    provider_queries: dict = Field(default_factory=dict)
+    retrieval_reflection: dict = Field(default_factory=dict)
+
+
+class RerunRequest(BaseModel):
+    tavily_queries: list[str] | None = None
+    weibo_query: str | None = None
 
 
 class EvaluateRequest(BaseModel):
@@ -97,6 +107,7 @@ _repository = RunRepository(PROJECT_ROOT / "data" / "my_agent.db")
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="my-agent")
 _evaluation_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="my-agent-eval")
 _cancel_events: dict[str, Event] = {}
+_run_sources: dict[str, set[str]] = {}
 
 
 class _RunCanceled(Exception):
@@ -114,8 +125,10 @@ def _safe_link_open(tokens, index, options, env):
 _markdown.renderer.rules["link_open"] = _safe_link_open
 
 
-def _new_agent(progress=None) -> FinancialMediaAgent:
-    return FinancialMediaAgent(Settings(), progress=progress)
+def _new_agent(progress=None, enabled_sources=None) -> FinancialMediaAgent:
+    return FinancialMediaAgent(
+        Settings(), progress=progress, enabled_sources=enabled_sources
+    )
 
 
 def _get_record(run_id: str) -> RunRecord:
@@ -127,6 +140,29 @@ def _get_record(run_id: str) -> RunRecord:
 
 def _set_progress(run_id: str, message: str) -> None:
     _repository.update_progress(run_id, message)
+
+
+def _save_stage1(run_id: str, agent: FinancialMediaAgent, state: RunState) -> None:
+    discovery = state.discovery
+    if discovery is None:
+        return
+    candidates = discovery.raw_candidates or discovery.candidates
+    rows = [
+        {
+            "title": item.title,
+            "url": item.url,
+            "snippet": item.snippet,
+            "source": item.source_name,
+            "provider": item.discovered_by[0] if item.discovered_by else "unknown",
+            "source_group": item.source_group,
+            "query": item.query,
+            "published_at": item.published_at,
+        }
+        for item in candidates
+        if item.url.strip()
+    ]
+    _repository.save_candidates(run_id, rows)
+    _set_progress(run_id, f"Stage 1 已保存 {len(rows)} 条候选，等待 Stage 2 分析")
 
 
 def _evaluation_dir(run_id: str) -> Path:
@@ -289,14 +325,19 @@ def _execute_run(run_id: str) -> None:
             media_queries=list(record.approved_queries),
             provider_queries=dict(record.provider_queries),
         )
-        agent = _new_agent(progress=progress)
+        agent = _new_agent(
+            progress=progress,
+            enabled_sources=_run_sources.get(run_id, {"tavily"}),
+        )
         state = agent.discover_from_plan(
             state, cancel_check=cancel_event.is_set
         )
         if cancel_event.is_set():
             raise _RunCanceled()
+        _save_stage1(run_id, agent, state)
         sources = _sources_payload(state.discovery)
         _repository.save_source_results(run_id, sources)
+        _repository.save_retrieval_reflection(run_id, state.retrieval_reflection)
         write_weibo_raw(state, _evaluation_dir(run_id))
         result = agent.complete(state, cancel_check=cancel_event.is_set)
         if cancel_event.is_set():
@@ -333,6 +374,10 @@ def create_plan(request: CreatePlanRequest) -> PlanResponse:
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"生成检索计划失败：{exc}") from exc
     run_id = uuid4().hex
+    enabled_sources = {name for name, enabled in request.sources.items() if enabled}
+    if not enabled_sources:
+        raise HTTPException(status_code=422, detail="至少需要开启一个数据源")
+    _run_sources[run_id] = enabled_sources
     _repository.create(
         run_id=run_id,
         query=state.query,
@@ -380,9 +425,55 @@ def cancel_run(run_id: str) -> RunResponse:
     return _to_run_response(_get_record(run_id))
 
 
+@app.post("/api/v1/runs/{run_id}/rerun", response_model=RunResponse, status_code=status.HTTP_202_ACCEPTED)
+def rerun_with_provider_queries(run_id: str, request: RerunRequest) -> RunResponse:
+    original = _get_record(run_id)
+    original_tavily = original.provider_queries.get("tavily", [])
+    original_weibo = original.provider_queries.get("weibo", "")
+    tavily = request.tavily_queries
+    if tavily is not None:
+        tavily = [" ".join(item.split()) for item in tavily if item.strip()]
+    weibo = " ".join((request.weibo_query or "").split()) if request.weibo_query is not None else None
+    unchanged_tavily = tavily is None or tavily == (original_tavily if isinstance(original_tavily, list) else [original_tavily])
+    unchanged_weibo = weibo is None or weibo == original_weibo
+    if unchanged_tavily and unchanged_weibo:
+        raise HTTPException(status_code=422, detail="请至少修改 Tavily 或微博 Query 中的一个")
+    provider_queries = dict(original.provider_queries)
+    if tavily is not None:
+        if not tavily:
+            raise HTTPException(status_code=422, detail="Tavily Query 不能为空")
+        provider_queries["tavily"] = tavily
+    if weibo is not None:
+        if not weibo:
+            raise HTTPException(status_code=422, detail="微博 Query 不能为空")
+        provider_queries["weibo"] = weibo
+    new_id = uuid4().hex
+    _run_sources[new_id] = _run_sources.get(run_id, {"tavily"})
+    _repository.create(
+        run_id=new_id,
+        query=original.query,
+        topic=original.topic,
+        proposed_queries=list(original.proposed_queries),
+        provider_queries=provider_queries,
+    )
+    _repository.approve(new_id, list(original.approved_queries))
+    _executor.submit(_execute_run, new_id)
+    return _to_run_response(_get_record(new_id))
+
+
 @app.get("/api/v1/runs/{run_id}", response_model=RunResponse)
 def get_run(run_id: str) -> RunResponse:
     return _to_run_response(_get_record(run_id))
+
+
+@app.get("/api/v1/runs/{run_id}/candidates")
+def get_candidates(run_id: str) -> dict:
+    _get_record(run_id)
+    rows = _repository.list_candidates(run_id)
+    providers: dict[str, int] = {}
+    for row in rows:
+        providers[row["provider"]] = providers.get(row["provider"], 0) + 1
+    return {"run_id": run_id, "counts": providers, "total": len(rows), "candidates": rows}
 
 
 @app.get("/api/v1/runs/{run_id}/report")
@@ -487,6 +578,8 @@ def _to_run_response(record: RunRecord) -> RunResponse:
             "success": sum(1 for item in sources if item.ok),
             "failed": sum(1 for item in sources if not item.ok),
         },
+        provider_queries=record.provider_queries,
+        retrieval_reflection=record.retrieval_reflection,
     )
 
 

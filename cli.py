@@ -103,6 +103,7 @@ def _run_topic_brief(args: argparse.Namespace) -> int:
         print(f"评测材料：{documents_path}；{report_path}")
     if not args.no_save:
         output_path = agent.save_brief(state.brief)
+        agent.save_retrieval_reflection(state.retrieval_reflection, output_path)
         print(f"\n简报文件：{output_path}")
     return 0
 

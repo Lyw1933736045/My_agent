@@ -42,6 +42,7 @@ class TavilySearchAgency:
         max_results: int = 7,
         search_depth: str = "basic",
         days: Optional[int] = None,
+        include_domains: Optional[list[str]] = None,
     ) -> SearchResponse:
         params = {
             "query": query,
@@ -53,6 +54,8 @@ class TavilySearchAgency:
         }
         if days is not None:
             params["days"] = days
+        if include_domains:
+            params["include_domains"] = include_domains
         raw = self.client.search(**params)
         results = []
         for item in raw.get("results", []):

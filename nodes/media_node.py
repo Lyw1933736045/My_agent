@@ -20,9 +20,16 @@ def _text_list(value: Any) -> list[str]:
 
 
 class MediaNode(BaseNode):
+    """从已经筛选过的正文中提炼结构化媒体观点。
+
+    输入是 MediaDocument 列表，输出是 MediaInsight 列表；
+    它不负责搜索，也不负责生成最终报告。
+    """
+
     def run(self, input_data: list[MediaDocument]) -> list[MediaInsight]:
         if not isinstance(input_data, list) or not input_data:
             raise ValueError("MediaNode 至少需要一篇媒体正文")
+        # 将 Python 对象转换成发送给 LLM 的结构化输入。
         payload = []
         for document in input_data:
             if not isinstance(document, MediaDocument) or not document.content.strip():
@@ -47,6 +54,7 @@ class MediaNode(BaseNode):
                 }
                 item["comments"] = metadata.get("comments", [])
             payload.append(item)
+        # LLM 只负责从正文提炼观点，来源分组等关键字段仍由程序校正。
         response = self.llm_client.invoke(
             SYSTEM_PROMPT_MEDIA_ANALYSIS,
             json.dumps({"documents": payload}, ensure_ascii=False),
@@ -91,7 +99,10 @@ class MediaNode(BaseNode):
                     interpretations=_text_list(item.get("interpretations")),
                     affected_parties=_text_list(item.get("affected_parties")),
                     risks_or_disagreements=_text_list(item.get("risks_or_disagreements")),
-                    metadata=source_metadata,
+                    metadata={
+                        **source_metadata,
+                        "timeline_events": item.get("timeline_events", []),
+                    },
                 )
             )
         if not insights:

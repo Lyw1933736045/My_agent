@@ -536,3 +536,32 @@ main {
   background: #f5f7fa;
   border-radius: 8px;
 }
+
+.reference-hits {
+  grid-column: 1 / -1;
+  margin-top: 8px;
+  padding: 16px 18px;
+  background: #f8fafc;
+  border: 1px solid var(--line, #e5e7eb);
+  border-radius: 8px;
+}
+
+.reference-hits h4 {
+  margin: 0 0 12px;
+}
+
+.reference-hits ol {
+  margin: 0;
+  padding-left: 24px;
+}
+
+.reference-hits li {
+  margin: 10px 0;
+  padding-left: 4px;
+}
+
+.reference-hits small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted, #64748b);
+}

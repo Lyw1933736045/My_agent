@@ -8,6 +8,7 @@
     toggleAdvanced: document.getElementById("toggle-advanced"),
     advancedPanel: document.getElementById("advanced-panel"),
     requireReview: document.getElementById("require-review"),
+    sourceOptions: document.querySelectorAll("[data-source]"),
     planSection: document.getElementById("plan-section"),
     planTopic: document.getElementById("plan-topic"),
     queryList: document.getElementById("query-list"),
@@ -24,6 +25,10 @@
     reportTitle: document.getElementById("report-title"),
     reportBody: document.getElementById("report-body"),
     reportSources: document.getElementById("report-sources"),
+    providerQueryPanel: document.getElementById("provider-query-panel"),
+    tavilyQueryInput: document.getElementById("tavily-query-input"),
+    weiboQueryInput: document.getElementById("weibo-query-input"),
+    rerunQueryBtn: document.getElementById("rerun-query-btn"),
     copyBtn: document.getElementById("copy-btn"),
     downloadMd: document.getElementById("download-md"),
     exportPdf: document.getElementById("export-pdf"),
@@ -257,6 +262,12 @@
     setBusy(false);
   }
 
+  function setProviderQueries(queries) {
+    const tavily = queries && queries.tavily;
+    els.tavilyQueryInput.value = Array.isArray(tavily) ? tavily.join("\n") : (tavily || "");
+    els.weiboQueryInput.value = (queries && queries.weibo) || "";
+  }
+
   function renderEvaluation(summary) {
     const rows = [
       ["最终得分", summary.overall_score],
@@ -265,9 +276,50 @@
       ["核心 rubric 报告覆盖", summary.core_report_coverage],
       ["重要 rubric 报告覆盖", summary.important_report_coverage],
     ];
-    els.evaluationResult.innerHTML = rows
-      .map(([label, value]) => `<div class="evaluation-row"><span>${label}</span><strong>${value}</strong></div>`)
-      .join("");
+    els.evaluationResult.innerHTML = "";
+    rows.forEach(([label, value]) => {
+      const row = document.createElement("div");
+      row.className = "evaluation-row";
+      const name = document.createElement("span");
+      name.textContent = label;
+      const score = document.createElement("strong");
+      score.textContent = value ?? "-";
+      row.append(name, score);
+      els.evaluationResult.append(row);
+    });
+
+    const hits = Array.isArray(summary.reference_hits) ? summary.reference_hits : [];
+    const hitSection = document.createElement("section");
+    hitSection.className = "reference-hits";
+    const hitTitle = document.createElement("h4");
+    const total = Number.isInteger(summary.reference_total_count)
+      ? summary.reference_total_count
+      : hits.length;
+    hitTitle.textContent = `Reference 命中要点（${hits.length}/${total}）`;
+    hitSection.append(hitTitle);
+
+    if (!hits.length) {
+      const empty = document.createElement("p");
+      empty.className = "stage-meta";
+      empty.textContent = "最终报告暂未命中 Reference 中的有效信息点。";
+      hitSection.append(empty);
+    } else {
+      const importanceLabels = { core: "核心", important: "重要", bonus: "补充" };
+      const list = document.createElement("ol");
+      hits.forEach((item) => {
+        const li = document.createElement("li");
+        const point = document.createElement("span");
+        point.textContent = item.criterion || item.rubric_id || "未命名信息点";
+        const meta = document.createElement("small");
+        const importance = importanceLabels[item.importance] || item.importance || "未分类";
+        const coverage = item.report_score === 1 ? "完整命中" : "部分命中";
+        meta.textContent = `${importance} · ${coverage}`;
+        li.append(point, meta);
+        list.append(li);
+      });
+      hitSection.append(list);
+    }
+    els.evaluationResult.append(hitSection);
     els.evaluationResult.hidden = false;
   }
 
@@ -306,6 +358,7 @@
           (await api(`/api/v1/runs/${runId}/report`)).report ||
           "";
         renderReport(report, run.topic, runId, run.sources || []);
+        setProviderQueries(run.provider_queries || {});
         return;
       }
       if (run.status === "failed") {
@@ -349,9 +402,11 @@
   }
 
   async function createPlan(query) {
+    const sources = {};
+    els.sourceOptions.forEach((input) => { sources[input.dataset.source] = input.checked; });
     return api("/api/v1/plans", {
       method: "POST",
-      body: JSON.stringify({ query }),
+      body: JSON.stringify({ query, sources }),
     });
   }
 
@@ -435,6 +490,23 @@
   });
 
   els.cancelBtn.addEventListener("click", cancelRun);
+
+  els.rerunQueryBtn.addEventListener("click", async () => {
+    if (!currentRunId) return;
+    const tavilyQueries = els.tavilyQueryInput.value.split("\n").map((item) => item.trim()).filter(Boolean);
+    const weiboQuery = els.weiboQueryInput.value.trim();
+    els.rerunQueryBtn.disabled = true;
+    try {
+      const rerun = await api(`/api/v1/runs/${currentRunId}/rerun`, {
+        method: "POST",
+        body: JSON.stringify({ tavily_queries: tavilyQueries, weibo_query: weiboQuery }),
+      });
+      await startRunning(rerun.run_id);
+    } catch (error) {
+      els.rerunQueryBtn.disabled = false;
+      showError(error.message || String(error));
+    }
+  });
 
   els.copyBtn.addEventListener("click", async () => {
     try {

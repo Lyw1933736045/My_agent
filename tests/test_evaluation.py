@@ -88,6 +88,11 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(summary["retrieval_coverage"], 100.0)
         self.assertEqual(summary["report_coverage"], 50.0)
         self.assertEqual(summary["diagnosis"]["summarization_miss"], 1)
+        self.assertEqual(summary["reference_hit_count"], 1)
+        self.assertEqual(summary["reference_total_count"], 2)
+        self.assertEqual(summary["reference_hits"][0]["rubric_id"], "R1")
+        self.assertEqual(summary["reference_hits"][0]["criterion"], "事实")
+        self.assertEqual(summary["reference_hits"][0]["report_score"], 1.0)
 
 
 if __name__ == "__main__":

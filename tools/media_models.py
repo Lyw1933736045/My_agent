@@ -40,6 +40,9 @@ class DiscoveryResult:
     stats: dict[str, int]
     errors: dict[str, str] = field(default_factory=dict)
     sources: tuple[SourceFetchResult, ...] = ()
+    raw_candidates: list[MediaCandidate] = field(default_factory=list)
+    provider_candidates: dict[str, list[MediaCandidate]] = field(default_factory=dict)
+    retrieval_reflection: dict[str, dict] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

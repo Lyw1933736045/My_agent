@@ -51,6 +51,13 @@
           <span>生成计划后暂停，等待我确认检索词</span>
         </label>
       </div>
+      <fieldset class="source-options">
+        <legend>数据源（默认仅 Tavily）</legend>
+        <label class="check-row"><input type="checkbox" data-source="tavily" checked><span>Tavily</span></label>
+        <label class="check-row"><input type="checkbox" data-source="newsnow"><span>NewsNow</span></label>
+        <label class="check-row"><input type="checkbox" data-source="rss"><span>RSS</span></label>
+        <label class="check-row"><input type="checkbox" data-source="weibo"><span>微博</span></label>
+      </fieldset>
     </section>
 
     <section id="plan-section" class="stage" hidden>
@@ -91,6 +98,15 @@
         </div>
       </div>
       <div id="report-sources" class="source-panel" hidden></div>
+      <details id="provider-query-panel" class="provider-query-panel">
+        <summary>查看本次使用的 Tavily / 微博 Query</summary>
+        <p class="stage-meta">如果报告不满意，可以修改后补充检索；不修改则继续使用当前报告。</p>
+        <label for="tavily-query-input">Tavily Query（每行一条）</label>
+        <textarea id="tavily-query-input" rows="3"></textarea>
+        <label for="weibo-query-input">微博 Query</label>
+        <input id="weibo-query-input" type="text">
+        <button type="button" id="rerun-query-btn" class="btn-primary">补充检索并重新生成报告</button>
+      </details>
       <article id="report-body" class="report-body"></article>
 
       <section id="evaluation-panel" class="evaluation-panel">

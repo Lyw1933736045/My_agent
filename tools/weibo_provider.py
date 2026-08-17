@@ -188,14 +188,14 @@ class WeiboProvider:
         self.search_url = search_url
         self.comments_url = comments_url
         self.target_posts = max(1, int(target_posts))
-        self.max_search_pages = max(1, min(3, int(max_search_pages)))
+        self.max_search_pages = max(1, min(10, int(max_search_pages)))
         self.timeout = max(1.0, float(timeout))
         self.request_interval_min = max(0.0, float(request_interval_min))
         self.request_interval_max = max(
             self.request_interval_min, float(request_interval_max)
         )
         self.comments_enabled = bool(comments_enabled)
-        self.max_comment_posts = max(0, min(2, int(max_comment_posts)))
+        self.max_comment_posts = max(0, min(5, int(max_comment_posts)))
         self.comment_interval_min = max(0.0, float(comment_interval_min))
         self.comment_interval_max = max(
             self.comment_interval_min, float(comment_interval_max)
@@ -234,8 +234,6 @@ class WeiboProvider:
         try:
             cookie = self._read_cookie()
             posts = self._fetch_posts(keyword, cookie, progress)
-            if self.comments_enabled and posts:
-                self._fetch_selected_comments(posts, cookie, progress)
             fetched_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
             self.raw_results = [
                 {**post, "fetched_at": fetched_at, "query": keyword}
@@ -253,6 +251,36 @@ class WeiboProvider:
             return []
         finally:
             self.diagnostics.status_counts["requests"] = self.request_count
+
+    def fetch_comments_for_candidates(
+        self,
+        candidates: list[MediaCandidate],
+        progress=None,
+    ) -> list[MediaCandidate]:
+        """Fetch comments only after relevance filtering, then refresh metadata."""
+        if not self.comments_enabled or not candidates:
+            return candidates
+        accepted_wids = {
+            str(candidate.metadata.get("wid") or "")
+            for candidate in candidates
+            if candidate.metadata.get("wid")
+        }
+        posts = [
+            post for post in self.raw_results
+            if str(post.get("wid") or "") in accepted_wids
+        ]
+        if not posts:
+            return candidates
+        self._fetch_selected_comments(posts, self._read_cookie(), progress)
+        self.diagnostics.status_counts["requests"] = self.request_count
+        refreshed = {
+            str(post.get("wid") or ""): self._to_candidate(post)
+            for post in posts
+        }
+        return [
+            refreshed.get(str(candidate.metadata.get("wid") or ""), candidate)
+            for candidate in candidates
+        ]
 
     def _read_cookie(self) -> str:
         try:

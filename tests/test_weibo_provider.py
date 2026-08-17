@@ -139,7 +139,8 @@ class WeiboProviderTests(unittest.TestCase):
                 directory, [_Response(search), comment(5002), comment(5003)],
                 comments_enabled=True,
             )
-            provider.search(["测试"])
+            candidates = provider.search(["测试"])
+            provider.fetch_comments_for_candidates(candidates)
 
         self.assertEqual(session.get.call_count, 3)
         by_wid = {item["wid"]: item for item in provider.raw_results}

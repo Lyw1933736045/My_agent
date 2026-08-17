@@ -39,23 +39,23 @@
             <span class="btn-label">生成简报</span>
           </button>
           <button type="button" id="toggle-advanced" class="btn-ghost" aria-expanded="false">
-            高级：审核检索词
+          高级：审核 Tavily Query
           </button>
         </div>
       </form>
 
       <div id="advanced-panel" class="advanced-panel" hidden>
-        <p class="panel-hint">开启后，会先生成检索计划供你修改，再开始聚合。</p>
+        <p class="panel-hint">开启后，会先生成计划供你审核 Tavily Query，再开始聚合。</p>
         <label class="check-row">
           <input type="checkbox" id="require-review">
-          <span>生成计划后暂停，等待我确认检索词</span>
+          <span>生成计划后暂停，等待我确认 Tavily Query</span>
         </label>
       </div>
       <fieldset class="source-options">
-        <legend>数据源（默认仅 Tavily）</legend>
+        <legend>数据源（NewsNow + RSS + Tavily）</legend>
+        <label class="check-row"><input type="checkbox" data-source="newsnow" checked><span>NewsNow</span></label>
+        <label class="check-row"><input type="checkbox" data-source="rss" checked><span>RSS</span></label>
         <label class="check-row"><input type="checkbox" data-source="tavily" checked><span>Tavily</span></label>
-        <label class="check-row"><input type="checkbox" data-source="newsnow"><span>NewsNow</span></label>
-        <label class="check-row"><input type="checkbox" data-source="rss"><span>RSS</span></label>
         <label class="check-row"><input type="checkbox" data-source="weibo"><span>微博</span></label>
       </fieldset>
     </section>
@@ -65,7 +65,7 @@
       <p class="stage-meta">主题：<strong id="plan-topic"></strong></p>
       <ul id="query-list" class="query-list"></ul>
       <div class="actions">
-        <button type="button" id="add-query" class="btn-ghost">添加检索词</button>
+        <button type="button" id="add-query" class="btn-ghost">添加 Tavily Query</button>
         <button type="button" id="approve-btn" class="btn-primary">批准并开始</button>
       </div>
     </section>
@@ -90,24 +90,64 @@
       <div class="report-head">
         <h2 id="report-title">简报</h2>
         <div class="report-actions">
+          <button type="button" id="generate-brief-btn" class="btn-primary" hidden>生成最新简报</button>
           <button type="button" id="copy-btn" class="btn-ghost">复制 Markdown</button>
           <a id="download-md" class="btn-ghost" href="#" download>导出 MD</a>
           <a id="export-pdf" class="btn-ghost" href="#" target="_blank" rel="noopener">导出 PDF</a>
           <a id="view-html" class="btn-ghost" href="#" target="_blank" rel="noopener">打开排版页</a>
+          <a data-workspace="graph" class="btn-ghost" href="/assets/graph.html?case=case1">知识图谱</a>
+          <a data-workspace="simulation" class="btn-primary" href="/assets/simulation.html?case=case1">开始舆情推演</a>
           <button type="button" id="new-btn" class="btn-primary">新问题</button>
         </div>
       </div>
+      <p id="analysis-ready-message" class="stage-meta" hidden></p>
+      <nav id="workspace-links" class="workspace-links" hidden>
+        <div class="workspace-copy">
+          <h3>舆情推演</h3>
+          <p class="stage-meta">简报完成后，在独立页面查看 Zep 真实图谱，并启动多 Agent 模拟。</p>
+        </div>
+        <a id="open-graph" data-workspace="graph" class="btn-ghost" href="/assets/graph.html?case=case1">查看知识图谱</a>
+        <a id="open-simulation" data-workspace="simulation" class="btn-primary" href="/assets/simulation.html?case=case1">开始舆情推演</a>
+      </nav>
       <div id="report-sources" class="source-panel" hidden></div>
       <details id="provider-query-panel" class="provider-query-panel">
-        <summary>查看本次使用的 Tavily / 微博 Query</summary>
-        <p class="stage-meta">如果报告不满意，可以修改后补充检索；不修改则继续使用当前报告。</p>
-        <label for="tavily-query-input">Tavily Query（每行一条）</label>
+        <summary>追加数据源</summary>
+        <p class="stage-meta">追加结果继续写入当前 case/run_id，并自动按 URL 合并。</p>
+        <div class="append-source-options">
+          <label class="check-row"><input type="checkbox" data-append-source="newsnow"><span>NewsNow</span></label>
+          <label class="check-row"><input type="checkbox" data-append-source="rss"><span>RSS</span></label>
+          <label class="check-row"><input type="checkbox" data-append-source="tavily"><span>Tavily</span></label>
+          <label class="check-row"><input type="checkbox" data-append-source="weibo"><span>微博</span></label>
+        </div>
+        <label for="tavily-query-input">Tavily Query（每次仅一条）</label>
         <textarea id="tavily-query-input" rows="3"></textarea>
-        <label for="weibo-query-input">微博 Query</label>
-        <input id="weibo-query-input" type="text">
-        <button type="button" id="rerun-query-btn" class="btn-primary">补充检索并重新生成报告</button>
+        <label for="weibo-query-input">微博 Query（由 Query Planner 生成）</label>
+        <input id="weibo-query-input" type="text" readonly>
+        <button type="button" id="rerun-query-btn" class="btn-primary">抓取并分析，暂不生成简报</button>
       </details>
       <article id="report-body" class="report-body"></article>
+
+      <section id="qa-panel" class="qa-panel" hidden>
+        <div class="qa-heading">
+          <div>
+            <h3>案例问答</h3>
+            <p class="stage-meta">只检索当前案例。请选择思考模式，再针对简报、结构化分析或原文提问。</p>
+          </div>
+        </div>
+        <div class="qa-controls">
+          <label for="qa-mode">思考模式</label>
+          <select id="qa-mode">
+            <option value="fast">快速｜根据简报</option>
+            <option value="analysis">分析｜根据结构化分析</option>
+            <option value="deep">深度｜检索原文并核对出处</option>
+          </select>
+          <textarea id="qa-question" rows="2" maxlength="5000" placeholder="例如：吴清有哪些发言？"></textarea>
+          <button type="button" id="qa-submit" class="btn-primary">提交问题</button>
+        </div>
+        <p id="qa-status" class="progress-text" hidden></p>
+        <div id="qa-answer" class="qa-answer" hidden></div>
+        <div id="qa-citations" class="qa-citations" hidden></div>
+      </section>
 
       <section id="evaluation-panel" class="evaluation-panel">
         <h3>报告评测</h3>

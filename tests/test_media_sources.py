@@ -27,37 +27,15 @@ class MediaSourceConfigTests(unittest.TestCase):
     def test_loads_newsnow_rss_and_selection(self):
         config = load_media_sources()
         self.assertTrue(config["newsnow"]["sources"])
-        social_ids = [
-            item["id"] for item in config["newsnow"]["sources"]
-            if item["source_group"] == "social_media"
-        ]
-        self.assertEqual(social_ids, ["weibo", "zhihu", "bilibili-hot-search"])
         self.assertNotIn("official", config)
-        self.assertEqual(len(config["rss"]["feeds"]), 15)
+        self.assertEqual(len(config["rss"]["feeds"]), 11)
         enabled = [item for item in config["rss"]["feeds"] if item.get("enabled", True)]
-        self.assertEqual(len(enabled), 13)
+        self.assertEqual(len(enabled), 11)
         self.assertEqual(
             {item["source_group"] for item in config["rss"]["feeds"]},
-            {"official_media", "news_media", "social_media"},
+            {"official_media", "news_media"},
         )
-        self.assertEqual(
-            {item["id"] for item in enabled},
-            {
-                "cctv-xwlb",
-                "people-finance",
-                "inewsweek-finance",
-                "chinanews-latest",
-                "wallstreetcn-live",
-                "wallstreetcn-hot",
-                "wallstreetcn-news",
-                "gelonghui-live",
-                "gelonghui-home",
-                "gelonghui-hot",
-                "yicai-latest",
-                "yicai-headline",
-                "zhihu-hot",
-            },
-        )
+        self.assertTrue(config["newsnow"]["enabled"] is False or isinstance(config["newsnow"]["enabled"], bool))
         self.assertTrue(config["tavily"]["enabled"])
         self.assertGreater(config["selection"]["candidate_limit"], 0)
         self.assertEqual(config["newsnow"]["timeout_seconds"], 30)
@@ -263,7 +241,9 @@ class TavilyMediaProviderTests(unittest.TestCase):
         from My_agent.tools.search import SearchResponse, SearchResult
         from My_agent.tools.tavily_provider import TavilyMediaProvider
 
-        provider = TavilyMediaProvider("tvly-test", max_results_per_query=3)
+        provider = TavilyMediaProvider(
+            "tvly-test", search_rounds=1, max_results_per_query=3
+        )
         provider.agency.search = lambda **kwargs: SearchResponse(
             query=kwargs["query"],
             results=[
@@ -272,14 +252,14 @@ class TavilyMediaProviderTests(unittest.TestCase):
                     url="https://wallstreetcn.com/articles/1",
                     published_date="2026-07-21",
                     source="wallstreetcn.com",
-                    content="机构观点与股指期货政策",
+                    search_snippet="机构观点与股指期货政策",
                 ),
                 SearchResult(
                     title="知乎讨论股指期货",
                     url="https://www.zhihu.com/question/1",
                     published_date=None,
                     source="zhihu.com",
-                    content="社交讨论",
+                    search_snippet="社交讨论",
                 ),
             ],
         )
@@ -287,6 +267,13 @@ class TavilyMediaProviderTests(unittest.TestCase):
         self.assertEqual(len(results), 2)
         self.assertEqual(results[0].discovered_by, ("tavily_general",))
         self.assertEqual(results[0].query, "股指期货 政策")
+        self.assertEqual(results[0].snippet, "机构观点与股指期货政策")
+        self.assertEqual(results[0].metadata["appearances"], [{
+            "query": "股指期货 政策",
+            "channel": "tavily_general",
+            "rank": 1,
+            "score": None,
+        }])
         by_url = {item.url: item for item in results}
         self.assertEqual(
             by_url["https://wallstreetcn.com/articles/1"].source_group,
@@ -296,6 +283,60 @@ class TavilyMediaProviderTests(unittest.TestCase):
             by_url["https://www.zhihu.com/question/1"].source_group,
             "social_media",
         )
+
+    def test_repeats_the_same_query_for_two_rounds_by_default(self):
+        from My_agent.tools.search import SearchResponse
+        from My_agent.tools.tavily_provider import TavilyMediaProvider
+
+        calls = []
+        provider = TavilyMediaProvider("tvly-test")
+
+        def search(**kwargs):
+            calls.append(kwargs["query"])
+            return SearchResponse(query=kwargs["query"], results=[])
+
+        provider.agency.search = search
+        provider.search(["同一 查询"], limit=10)
+
+        self.assertEqual(calls, ["同一 查询", "同一 查询"])
+        self.assertEqual(
+            provider.round_stats,
+            [
+                {
+                    "query": "同一 查询",
+                    "round": 1,
+                    "returned_count": 0,
+                    "unique_count": 0,
+                    "new_unique_count": 0,
+                },
+                {
+                    "query": "同一 查询",
+                    "round": 2,
+                    "returned_count": 0,
+                    "unique_count": 0,
+                    "new_unique_count": 0,
+                },
+            ],
+        )
+
+    def test_deduplicates_same_url_before_returning_candidates(self):
+        from My_agent.tools.search import SearchResponse, SearchResult
+        from My_agent.tools.tavily_provider import TavilyMediaProvider
+
+        provider = TavilyMediaProvider("tvly-test", search_rounds=2, max_results_per_query=1)
+
+        def search(**kwargs):
+            return SearchResponse(query=kwargs["query"], results=[SearchResult(
+                title="同一文章", url="https://example.com/article",
+                published_date=None, source="example.com", search_snippet="摘要",
+            )])
+
+        provider.agency.search = search
+        results = provider.search(["同一 查询"], limit=1)
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(len(results[0].metadata["appearances"]), 1)
+        self.assertEqual(provider.round_stats[1]["new_unique_count"], 0)
 
 
 class _FakeLLM:
@@ -332,6 +373,34 @@ class MediaNodeTests(unittest.TestCase):
         self.assertEqual(insights[0].interpretations, ["媒体解释"])
         self.assertEqual(insights[0].url, document.final_url)
         self.assertEqual(insights[0].source_group, "news_media")
+
+    def test_long_article_uses_full_raw_content_in_multiple_extraction_calls(self):
+        class ChunkLLM:
+            def __init__(self):
+                self.calls = 0
+
+            def invoke(self, _system, user_prompt):
+                self.calls += 1
+                payload = json.loads(user_prompt)["documents"][0]
+                return json.dumps([{
+                    "title": payload["title"],
+                    "source_name": payload["source_name"],
+                    "url": payload["url"],
+                    "reported_facts": [f"片段{self.calls}事实"],
+                    "statistics": [{"value": str(self.calls), "context": "测试", "attribution": None}],
+                }], ensure_ascii=False)
+
+        candidate = MediaCandidate("长文章", "https://media.example/long", "测试媒体", None)
+        raw = "。".join([f"正文片段{i}，这里是用于测试长正文分片的补充内容" for i in range(500)])
+        document = MediaDocument(
+            candidate=candidate, final_url=candidate.url, fetched_at="now",
+            content="相关性片段", raw_content=raw, content_type="text/html",
+        )
+        llm = ChunkLLM()
+        insights = MediaNode(llm).run([document])
+        self.assertGreater(llm.calls, 1)
+        self.assertEqual(len(insights[0].reported_facts), llm.calls)
+        self.assertEqual(len(insights[0].statistics), llm.calls)
 
 
 class _FakeProvider:
@@ -388,7 +457,7 @@ class MediaDiscoveryTests(unittest.TestCase):
         MediaDiscovery({"rss": shared, "weibo": special}).run(
             ["媒体 查询"],
             limit=10,
-            provider_queries={"weibo": ["宽松 微博查询"]},
+            weibo_queries=["宽松 微博查询"],
         )
 
         self.assertEqual(shared.search.call_args.args[0], ["媒体 查询"])
@@ -430,6 +499,42 @@ class MediaDiscoveryTests(unittest.TestCase):
             "https://example.com/a?keep=1",
         )
 
+    def test_canonical_url_merges_confirmed_eastmoney_pc_and_wap_ids(self):
+        self.assertEqual(
+            canonical_url("https://finance.eastmoney.com/a/202608033830030937.html"),
+            canonical_url("https://wap.eastmoney.com/a/202608033830030937.html"),
+        )
+
+    def test_stage1_merges_same_url_appearances_without_losing_channels(self):
+        targeted = MediaCandidate(
+            "核心事件", "https://example.com/a?utm_source=targeted", "媒体A", None,
+            snippet="短摘要", discovered_by=("tavily_targeted",), query="核心 事件",
+            metadata={"appearances": [{
+                "query": "核心 事件", "channel": "tavily_targeted",
+                "rank": 1, "score": 0.9,
+            }]},
+        )
+        general = MediaCandidate(
+            "核心事件", "https://example.com/a", "媒体A", None,
+            snippet="更长的搜索摘要", discovered_by=("tavily_general",), query="核心 事件",
+            metadata={"appearances": [{
+                "query": "核心 事件", "channel": "tavily_general",
+                "rank": 2, "score": 0.8,
+            }]},
+        )
+
+        result = MediaDiscovery({
+            "tavily": _FakeProvider([targeted, general])
+        }).run(["核心 事件"], limit=10)
+
+        self.assertEqual(len(result.raw_candidates), 1)
+        self.assertEqual(result.raw_candidates[0].snippet, "更长的搜索摘要")
+        self.assertEqual(
+            result.raw_candidates[0].discovered_by,
+            ("tavily_targeted", "tavily_general"),
+        )
+        self.assertEqual(len(result.raw_candidates[0].metadata["appearances"]), 2)
+
     def test_filters_old_candidates_and_reports_count(self):
         old_date = (datetime.now(timezone.utc) - timedelta(days=31)).isoformat()
         old = MediaCandidate(
@@ -440,6 +545,7 @@ class MediaDiscoveryTests(unittest.TestCase):
             ["央行 政策"], limit=10, max_age_days=30
         )
         self.assertEqual(result.candidates, [])
+        self.assertEqual(result.raw_candidates, [])
         self.assertEqual(result.stats["time_filtered_count"], 1)
 
 

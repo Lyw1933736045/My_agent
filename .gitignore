@@ -14,12 +14,21 @@ dist/
 **/Cookie.txt
 weibo_cookie.txt
 
-# 本地数据库与运行数据
+# 本地数据库与运行数据（PostgreSQL 数据在数据库里，不要提交 dump）
 *.db
 *.db-*
 *.sqlite
 *.sqlite3
-data/evaluations/
+*.dump
+*.sql.gz
+data/
+legacy/data/*.db*
+
+# 本地案例、评测材料、检索实验结果
+evaluation_cases/
+experiments/**/*.json
+experiments/**/*.md
+!experiments/**/README.md
 
 # 手动抓取和运行结果
 weibo_raw.json

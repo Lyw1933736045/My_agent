@@ -52,6 +52,8 @@ class MediaDocument:
     fetched_at: str
     content_type: str
     content: str
+    # 完整抓取正文仅用于归档和重新分析；content 是进入 LLM/RAG 的相关片段。
+    raw_content: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -75,4 +77,6 @@ class MediaInsight:
     interpretations: list[str] = field(default_factory=list)
     affected_parties: list[str] = field(default_factory=list)
     risks_or_disagreements: list[str] = field(default_factory=list)
+    statistics: list[dict[str, Any]] = field(default_factory=list)
+    named_views: list[dict[str, Any]] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)

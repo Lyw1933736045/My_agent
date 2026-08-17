@@ -11,7 +11,7 @@ from html.parser import HTMLParser
 from typing import Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener
 
 
 def _now_iso() -> str:
@@ -85,6 +85,8 @@ class WebReader:
         self.max_content_bytes = max_content_bytes
         self.max_text_length = max_text_length
         self.user_agent = user_agent
+        self._default_opener = build_opener()
+        self._direct_opener = build_opener(ProxyHandler({}))
 
     @staticmethod
     def validate_url(url: str) -> str:
@@ -96,34 +98,19 @@ class WebReader:
 
     def read(self, url: str) -> WebReadResult:
         requested_url = self.validate_url(url)
-        request = Request(
-            requested_url,
-            headers={
-                "User-Agent": self.user_agent,
-                "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1",
-            },
-        )
         try:
-            with urlopen(request, timeout=self.timeout) as response:
-                final_url = response.geturl()
-                content_type = (
-                    response.headers.get_content_type() or "application/octet-stream"
-                ).lower()
-                if content_type not in self._supported_types:
-                    raise ValueError(f"暂不支持读取内容类型：{content_type}")
-
-                raw = response.read(self.max_content_bytes + 1)
-                if len(raw) > self.max_content_bytes:
-                    raise ValueError("官方网页响应超过允许的最大字节数")
-
-                charset: Optional[str] = response.headers.get_content_charset()
-                decoded = raw.decode(charset or "utf-8", errors="replace")
-        except HTTPError as exc:
-            raise ValueError(f"网页返回 HTTP {exc.code}") from exc
-        except URLError as exc:
-            raise ValueError(f"无法读取网页：{exc.reason}") from exc
-        except TimeoutError as exc:
-            raise ValueError("网页读取超时") from exc
+            final_url, content_type, decoded = self._read_response(
+                self._default_opener, requested_url
+            )
+        except ValueError as first_error:
+            try:
+                final_url, content_type, decoded = self._read_response(
+                    self._direct_opener, requested_url
+                )
+            except ValueError as second_error:
+                raise ValueError(
+                    f"默认请求失败：{first_error}；关闭代理重试失败：{second_error}"
+                ) from second_error
 
         if content_type in {"text/html", "application/xhtml+xml"}:
             parser = _ReadableHTMLParser()
@@ -145,3 +132,34 @@ class WebReader:
             content_type=content_type,
             content=content,
         )
+
+    def _read_response(self, opener, requested_url: str) -> tuple[str, str, str]:
+        request = Request(
+            requested_url,
+            headers={
+                "User-Agent": self.user_agent,
+                "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1",
+            },
+        )
+        try:
+            with opener.open(request, timeout=self.timeout) as response:
+                final_url = response.geturl()
+                content_type = (
+                    response.headers.get_content_type() or "application/octet-stream"
+                ).lower()
+                if content_type not in self._supported_types:
+                    raise ValueError(f"暂不支持读取内容类型：{content_type}")
+
+                raw = response.read(self.max_content_bytes + 1)
+                if len(raw) > self.max_content_bytes:
+                    raise ValueError("官方网页响应超过允许的最大字节数")
+
+                charset: Optional[str] = response.headers.get_content_charset()
+                decoded = raw.decode(charset or "utf-8", errors="replace")
+        except HTTPError as exc:
+            raise ValueError(f"网页返回 HTTP {exc.code}") from exc
+        except URLError as exc:
+            raise ValueError(f"无法读取网页：{exc.reason}") from exc
+        except TimeoutError as exc:
+            raise ValueError("网页读取超时") from exc
+        return final_url, content_type, decoded

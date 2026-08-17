@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace
+from typing import TYPE_CHECKING
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from ..tools.media_models import MediaCandidate
+if TYPE_CHECKING:
+    from ..tools.media_models import MediaCandidate
 
 
 _TRACKING_PARAMS = {
@@ -18,7 +20,7 @@ _TITLE_NOISE = re.compile(r"[\W_]+", re.UNICODE)
 
 def canonical_url(url: str) -> str:
     parsed = urlparse(url.strip())
-    host = (parsed.hostname or "").lower()
+    host = (parsed.hostname or "").lower().rstrip(".").removeprefix("www.")
     if parsed.port and parsed.port not in {80, 443}:
         host = f"{host}:{parsed.port}"
     query = urlencode([
@@ -27,9 +29,15 @@ def canonical_url(url: str) -> str:
         if key.lower() not in _TRACKING_PARAMS and not key.lower().startswith("utm_")
     ])
     path = parsed.path or "/"
+    # 仅对已确认共享文章 ID 的 PC/WAP 页面做跨子域合并。
+    if host in {"finance.eastmoney.com", "wap.eastmoney.com"} and re.fullmatch(
+        r"/a/\d+\.html", path
+    ):
+        host = "eastmoney.com"
     if path != "/":
         path = path.rstrip("/")
-    return urlunparse((parsed.scheme.lower(), host, path, "", query, ""))
+    scheme = "https" if parsed.scheme.lower() in {"http", "https"} else parsed.scheme.lower()
+    return urlunparse((scheme, host, path, "", query, ""))
 
 
 def normalized_title(title: str) -> str:
@@ -40,6 +48,8 @@ def valid_provider_candidates(
     provider: str, candidates: list[MediaCandidate]
 ) -> list[MediaCandidate]:
     """按 Retrieval Reflection 第一版规则返回去重后的有效结果。"""
+    from ..tools.media_models import MediaCandidate
+
     valid: list[MediaCandidate] = []
     seen: set[str] = set()
     for candidate in candidates:

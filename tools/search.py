@@ -15,7 +15,8 @@ class SearchResult:
     url: str
     published_date: Optional[str]
     source: str
-    content: str
+    # Tavily 返回的是搜索摘要，不是网页正文。
+    search_snippet: str
     score: Optional[float] = None
 
 
@@ -66,7 +67,7 @@ class TavilySearchAgency:
                     url=url,
                     published_date=item.get("published_date"),
                     source=urlparse(url).netloc.removeprefix("www."),
-                    content=item.get("content", ""),
+                    search_snippet=item.get("content", ""),
                     score=item.get("score"),
                 )
             )

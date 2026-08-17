@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>模拟推演｜金融单一智能体</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/workspace.css">
+</head>
+<body>
+  <div class="workspace">
+    <header class="workspace-header">
+      <a class="btn-ghost" href="/">返回简报</a>
+      <h1>模拟推演</h1>
+      <span id="sim-meta" class="meta">来源：模拟结果</span>
+      <nav>
+        <a id="to-graph" class="btn-ghost" href="/graph">知识图谱</a>
+      </nav>
+    </header>
+    <main class="split simulation-split">
+      <section class="simulation-stage">
+        <div class="stage-tabs" role="tablist" aria-label="模拟结果视图">
+          <button type="button" class="is-active" data-stage="dashboard">分析看板</button>
+          <button type="button" data-stage="network">传播网络</button>
+        </div>
+        <div id="analysis-dashboard" class="analysis-dashboard">
+          <div class="dashboard-heading">
+            <div>
+              <span>模拟结果分析</span>
+              <h2>舆情演化可视化</h2>
+            </div>
+            <p id="analysis-disclaimer">正在计算本次模拟的量化结果…</p>
+          </div>
+          <div id="analysis-cards" class="analysis-cards"></div>
+          <div class="dashboard-grid">
+            <article class="chart-card chart-card-wide">
+              <div class="chart-heading"><div><span>日志直接统计</span><h3>每轮行为变化</h3></div></div>
+              <svg id="action-chart" role="img" aria-label="每轮行为变化图"></svg>
+            </article>
+            <article class="chart-card">
+              <div class="chart-heading"><div><span>文本规则推断</span><h3>群体表达倾向</h3></div><small>谨慎 ← 0 → 积极</small></div>
+              <svg id="group-chart" role="img" aria-label="群体表达倾向图"></svg>
+            </article>
+            <article class="chart-card">
+              <div class="chart-heading"><div><span>日志文本统计</span><h3>议题热度演化</h3></div><small>颜色越深，关注比例越高</small></div>
+              <svg id="topic-chart" role="img" aria-label="议题热度演化图"></svg>
+            </article>
+          </div>
+          <div id="analysis-finding" class="analysis-finding">模拟完成后生成中文分析结论。</div>
+        </div>
+        <div id="network-panel" class="graph-stage network-panel" hidden>
+          <svg id="graph-svg" role="img" aria-label="模拟互动网络"></svg>
+          <div class="graph-legend">虚线表示模拟互动（点赞、评论、引用、转发、关注）</div>
+        </div>
+      </section>
+      <aside class="side-panel">
+        <div class="side-scroll">
+          <div id="sim-message" class="message">正在载入推演工作区…</div>
+          <div class="controls">
+            <label>轮数
+              <input id="sim-rounds" type="number" min="1" max="48" value="4">
+            </label>
+            <button type="button" id="sim-start" class="btn-primary">启动</button>
+            <button type="button" id="sim-stop" class="btn-ghost" disabled>停止</button>
+            <span id="sim-status" class="status-badge">未运行</span>
+          </div>
+          <div id="sim-stats" class="stats"></div>
+          <div id="graph-detail"></div>
+          <details class="side-section" open>
+            <summary>逐轮详细记录</summary>
+            <div id="sim-rounds-list" class="rounds-list"><p>启动推演后，这里会列出每轮智能体行为。</p></div>
+          </details>
+          <details class="side-section">
+            <summary>智能分析报告</summary>
+            <div id="sim-report" class="sim-report"><p>推演完成后显示总结报告。</p></div>
+          </details>
+        </div>
+      </aside>
+    </main>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+  <script src="/assets/graph-view.js"></script>
+  <script src="/assets/dashboard-view.js"></script>
+  <script src="/assets/simulation.js"></script>
+</body>
+</html>

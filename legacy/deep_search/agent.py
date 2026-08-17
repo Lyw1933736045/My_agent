@@ -201,7 +201,7 @@ class FinancialResearchAgent:
                 "url": result.url,
                 "published_date": result.published_date,
                 "source": result.source,
-                "content": result.content,
+                "content": result.search_snippet,
                 "score": result.score,
             }
             for result in response.results

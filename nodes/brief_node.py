@@ -1,14 +1,23 @@
-"""基于媒体报道和社交平台材料生成可追溯简报。"""
+"""跨来源综合信息并生成结构化报告与固定 Markdown。"""
 
 import json
 
 from .base_node import BaseNode
 from ..prompts import SYSTEM_PROMPT_MULTI_FACT_BRIEF
-from ..utils.text_processing import clean_markdown_tags
+from ..tools.brief_models import (
+    BriefResult,
+    normalize_brief_data,
+    render_brief_markdown,
+)
+from ..utils.text_processing import extract_json
 
 
 class BriefNode(BaseNode):
     def run(self, input_data: dict) -> str:
+        """Compatibility entry point returning Markdown."""
+        return self.generate(input_data).markdown
+
+    def generate(self, input_data: dict) -> BriefResult:
         # 保留旧字段仅为兼容历史调用；主流程不再传入独立官方材料。
         documents = input_data.get("official_documents", input_data.get("documents", []))
         media_insights = input_data.get("media_insights", [])
@@ -32,41 +41,65 @@ class BriefNode(BaseNode):
         query = " ".join(query.splitlines())
         if not query:
             raise ValueError("BriefNode 缺少报告标题")
+        sources, source_by_url = self._source_catalog(documents, media_insights, social_insights)
         payload = dict(input_data)
         # 只有历史调用显式提供时才保留该字段；新主流程完全从媒体内容提取官方信息。
         if documents:
-            payload["official_documents"] = documents
+            payload["official_documents"] = self._with_source_ids(documents, source_by_url)
         else:
             payload.pop("official_documents", None)
-        payload["media_insights"] = media_insights
-        payload["social_insights"] = social_insights
+        payload["media_insights"] = self._with_source_ids(media_insights, source_by_url)
+        payload["social_insights"] = self._with_source_ids(social_insights, source_by_url)
+        payload["source_catalog"] = sources
 
         response = self.llm_client.invoke(
             SYSTEM_PROMPT_MULTI_FACT_BRIEF,
             json.dumps(payload, ensure_ascii=False),
         )
-        brief = clean_markdown_tags(response)
-        if not brief:
-            raise ValueError("LLM 未返回简报")
-        lines = brief.splitlines()
-        first_content_index = next(
-            (index for index, line in enumerate(lines) if line.strip()),
-            None,
-        )
-        title = f"# {query}"
-        if first_content_index is not None and lines[first_content_index].startswith("# "):
-            lines[first_content_index] = title
-        else:
-            lines = [title, "", *lines]
-        brief = "\n".join(lines)
-        missing_media = [
-            insight for insight in media_insights + social_insights
-            if insight.get("url") and insight["url"] not in brief
+        parsed = extract_json(response)
+        if not isinstance(parsed, dict):
+            raise ValueError("LLM 未返回 brief_data JSON 对象")
+        data = normalize_brief_data(parsed, title=query, sources=sources)
+        markdown = render_brief_markdown(data)
+        return BriefResult(data=data.model_dump(mode="json"), markdown=markdown)
+
+    @staticmethod
+    def _source_catalog(
+        documents: list[dict],
+        media_insights: list[dict],
+        social_insights: list[dict],
+    ) -> tuple[list[dict], dict[str, str]]:
+        sources: list[dict] = []
+        source_by_url: dict[str, str] = {}
+        entries = [
+            *((item, "official") for item in documents),
+            *((item, "social" if item.get("source_group") == "social_media" else
+               "official" if item.get("source_group") == "official_media" else "media")
+              for item in [*media_insights, *social_insights]),
         ]
-        if missing_media:
-            lines = [brief.rstrip(), "", "## 补充媒体与社交平台来源", ""]
-            for insight in missing_media:
-                label = insight.get("title") or insight.get("source_name") or "媒体报道"
-                lines.append(f"- [{label}]({insight['url']})")
-            brief = "\n".join(lines)
-        return brief
+        for item, source_type in entries:
+            url = str(item.get("url") or item.get("official_url") or "").strip()
+            if not url or url in source_by_url:
+                continue
+            source_id = f"S{len(sources) + 1:02d}"
+            event_fact = item.get("event_fact") if isinstance(item.get("event_fact"), dict) else {}
+            sources.append({
+                "id": source_id,
+                "title": str(item.get("title") or event_fact.get("title") or "未命名来源"),
+                "source_name": str(item.get("source_name") or event_fact.get("publisher") or ""),
+                "url": url,
+                "published_at": item.get("published_at") or event_fact.get("published_at"),
+                "source_type": source_type,
+            })
+            source_by_url[url] = source_id
+        return sources, source_by_url
+
+    @staticmethod
+    def _with_source_ids(items: list[dict], source_by_url: dict[str, str]) -> list[dict]:
+        result = []
+        for item in items:
+            copied = dict(item)
+            url = str(item.get("url") or item.get("official_url") or "")
+            copied["source_id"] = source_by_url.get(url)
+            result.append(copied)
+        return result

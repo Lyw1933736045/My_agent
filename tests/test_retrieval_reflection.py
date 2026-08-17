@@ -1,7 +1,9 @@
 import json
+import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from uuid import uuid4
 
 from My_agent.nodes.retrieval_reflection_node import (
     AdaptiveRetrievalNode,
@@ -57,15 +59,16 @@ class RetrievalReflectionTests(unittest.TestCase):
                 "tavily": [_candidate("tavily", 1), duplicate],
                 "weibo": [_candidate("weibo", 1), _candidate("weibo", 2)],
             },
-            "provider_queries": {
-                "tavily": ["首次查询"],
-                "weibo": ["微博查询"],
-            },
+            "tavily_queries": ["首次查询"],
+            "weibo_queries": ["微博查询"],
             "thresholds": {"tavily": 3, "weibo": 2},
         })
 
         self.assertEqual(trace["tavily"]["initial_valid_count"], 1)
-        self.assertTrue(trace["tavily"]["adaptive_triggered"])
+        self.assertFalse(trace["tavily"]["adaptive_triggered"])
+        self.assertEqual(
+            trace["tavily"]["adaptive_disabled_reason"], "single_rewrite_only"
+        )
         self.assertEqual(trace["weibo"]["initial_valid_count"], 2)
         self.assertFalse(trace["weibo"]["adaptive_triggered"])
 
@@ -100,7 +103,7 @@ class RetrievalReflectionTests(unittest.TestCase):
         self.assertEqual(len(llm.calls), 1)
         self.assertEqual(llm.calls[0][1]["initial_valid_count"], 1)
 
-    def test_discovery_retries_only_insufficient_provider_once_and_merges(self):
+    def test_discovery_does_not_rewrite_tavily_and_keeps_weibo_threshold(self):
         tavily = _Provider([
             [_candidate("tavily", 1), _candidate("tavily", 2)],
             [
@@ -118,10 +121,8 @@ class RetrievalReflectionTests(unittest.TestCase):
 
         result = MediaDiscovery({"tavily": tavily, "weibo": weibo}).run(
             ["核心事件"],
-            provider_queries={
-                "tavily": ["核心事件 首次"],
-                "weibo": ["核心事件 微博"],
-            },
+            tavily_queries=["核心事件 首次"],
+            weibo_queries=["核心事件 微博"],
             topic="核心事件",
             retrieval_check_node=RetrievalCheckNode(),
             adaptive_retrieval_node=adaptive,
@@ -132,15 +133,17 @@ class RetrievalReflectionTests(unittest.TestCase):
             },
         )
 
-        self.assertEqual(tavily.calls, [
-            ["核心事件 首次"], ["核心事件 补充影响"]
-        ])
+        self.assertEqual(tavily.calls, [["核心事件 首次"]])
         self.assertEqual(weibo.calls, [["核心事件 微博"]])
-        self.assertEqual(result.retrieval_reflection["tavily"]["retry_valid_count"], 3)
-        self.assertEqual(result.retrieval_reflection["tavily"]["final_valid_count"], 4)
+        self.assertEqual(result.retrieval_reflection["tavily"]["retry_valid_count"], 0)
+        self.assertEqual(result.retrieval_reflection["tavily"]["final_valid_count"], 2)
         self.assertEqual(result.retrieval_reflection["weibo"]["final_valid_count"], 2)
-        self.assertEqual(len(result.raw_candidates), 6)
+        self.assertEqual(len(result.raw_candidates), 4)
 
+    @unittest.skipUnless(
+        os.getenv("TEST_DATABASE_URL"),
+        "设置 TEST_DATABASE_URL 后运行 PostgreSQL 集成测试",
+    )
     def test_trace_is_persisted_for_api_and_cli_outputs(self):
         trace = {
             "tavily": {
@@ -152,15 +155,16 @@ class RetrievalReflectionTests(unittest.TestCase):
         }
         with TemporaryDirectory() as directory:
             root = Path(directory)
-            repository = RunRepository(root / "agent.db")
+            repository = RunRepository(os.environ["TEST_DATABASE_URL"])
+            run_id = uuid4().hex
             repository.create(
-                run_id="run-1",
+                run_id=run_id,
                 query="核心事件",
                 topic="核心事件",
-                proposed_queries=["核心事件"],
+                tavily_queries=["核心事件"],
             )
-            repository.save_retrieval_reflection("run-1", trace)
-            self.assertEqual(repository.get("run-1").retrieval_reflection, trace)
+            repository.save_retrieval_reflection(run_id, trace)
+            self.assertEqual(repository.get(run_id).retrieval_reflection, trace)
 
             report_path = root / "report.md"
             report_path.write_text("# 报告\n", encoding="utf-8")

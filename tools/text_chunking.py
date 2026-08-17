@@ -94,3 +94,34 @@ def select_chunks(
         selected_indexes = list(dict.fromkeys(fallback))[:top_k]
 
     return [chunks[index] for index in sorted(selected_indexes)]
+
+
+def select_relevance_chunks(
+    chunks: list[str],
+    *,
+    topic: str,
+    core_terms: list[str],
+    support_terms: list[str],
+    top_k: int = 5,
+) -> list[str]:
+    """Select recall-first chunks for article relevance review."""
+    if top_k < 1:
+        raise ValueError("top_k 必须是正整数")
+    if not chunks:
+        return []
+    normalized_topic = " ".join(str(topic or "").casefold().split())
+    core = [" ".join(str(term).casefold().split()) for term in core_terms if str(term).strip()]
+    support = [" ".join(str(term).casefold().split()) for term in support_terms if str(term).strip()]
+    scored = []
+    for index, chunk in enumerate(chunks):
+        text = chunk.casefold()
+        score = 10 if normalized_topic and normalized_topic in text else 0
+        score += sum(10 for term in core if term in text)
+        score += sum(3 for term in support if term in text)
+        scored.append((score, index))
+    matched = [item for item in scored if item[0] > 0]
+    if matched:
+        indexes = [index for _, index in sorted(matched, key=lambda item: (-item[0], item[1]))[:top_k]]
+    else:
+        indexes = list(dict.fromkeys([0, len(chunks) // 2, len(chunks) - 1]))[:top_k]
+    return [chunks[index] for index in sorted(indexes)]

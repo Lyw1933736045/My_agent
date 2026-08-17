@@ -38,23 +38,26 @@ class RetrievalCheckNode:
 
     def run(self, input_data: dict) -> dict[str, dict]:
         provider_candidates = input_data.get("provider_candidates") or {}
-        provider_queries = input_data.get("provider_queries") or {}
+        tavily_queries = input_data.get("tavily_queries") or []
+        weibo_queries = input_data.get("weibo_queries") or []
         thresholds = input_data.get("thresholds") or {}
         trace: dict[str, dict] = {}
         if "tavily" in provider_candidates:
-            initial_queries = _normalized_queries(provider_queries.get("tavily"), 2)
+            initial_queries = _normalized_queries(tavily_queries, 2)
             count = len(valid_provider_candidates("tavily", provider_candidates["tavily"]))
             # 候选数量低于阈值时，标记 adaptive_triggered=True。
             trace["tavily"] = {
                 "initial_queries": initial_queries,
                 "initial_valid_count": count,
-                "adaptive_triggered": count < int(thresholds.get("tavily", 3)),
+                # Tavily Query 在首轮只改写一次，不再触发 LLM 补充改写。
+                "adaptive_triggered": False,
+                "adaptive_disabled_reason": "single_rewrite_only",
                 "supplementary_queries": [],
                 "retry_valid_count": 0,
                 "final_valid_count": count,
             }
         if "weibo" in provider_candidates:
-            initial = _normalized_queries(provider_queries.get("weibo"), 1)
+            initial = _normalized_queries(weibo_queries, 1)
             count = len(valid_provider_candidates("weibo", provider_candidates["weibo"]))
             trace["weibo"] = {
                 "initial_query": initial[0] if initial else "",

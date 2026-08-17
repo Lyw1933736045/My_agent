@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 from .media_models import DiscoveryResult, MediaCandidate, SourceFetchResult
+from .media_relevance import is_media_candidate_relevant
 from ..utils.dedup import canonical_url, select_candidates, valid_provider_candidates
 
 
@@ -20,7 +22,10 @@ class MediaDiscovery:
         max_per_source: int = 3,
         max_per_source_overrides: dict[str, int] | None = None,
         max_age_days: int | None = None,
-        provider_queries: dict[str, list[str]] | None = None,
+        tavily_queries: list[str] | None = None,
+        weibo_queries: list[str] | None = None,
+        newsnow_rss_core: list[str] | None = None,
+        newsnow_rss_support: list[str] | None = None,
         topic: str = "",
         retrieval_check_node=None,
         adaptive_retrieval_node=None,
@@ -40,13 +45,13 @@ class MediaDiscovery:
         provider_stats: dict[str, int] = {}
         provider_candidates: dict[str, list[MediaCandidate]] = {}
         provider_raw_results: dict[str, list[dict]] = {}
-        effective_provider_queries: dict[str, list[str]] = {}
+        effective_tavily_queries = list(tavily_queries or queries)
+        effective_weibo_queries = list(weibo_queries or queries)
         for name, provider in self.providers.items():
             effective_queries = (
-                provider_queries.get(name, queries)
-                if provider_queries else queries
+                effective_tavily_queries if name == "tavily"
+                else effective_weibo_queries if name == "weibo" else queries
             )
-            effective_provider_queries[name] = list(effective_queries)
             provider_candidates[name] = []
             if progress:
                 progress(f"开始 {name} 发现……")
@@ -61,6 +66,21 @@ class MediaDiscovery:
                 if cancel_check and cancel_check():
                     raise RuntimeError("任务已中止")
                 counts[name] = len(items)
+                if name in {"newsnow", "rss"} and newsnow_rss_core:
+                    fetched_items = items
+                    items = [
+                        item for item in fetched_items
+                        if is_media_candidate_relevant(
+                            item.title,
+                            item.snippet,
+                            newsnow_rss_core,
+                            newsnow_rss_support or [],
+                            name,
+                        )
+                    ]
+                    provider_stats[f"{name}_relevance_filtered_count"] = (
+                        len(fetched_items) - len(items)
+                    )
                 provider_candidates[name] = list(items)
                 provider_raw_results[name] = list(
                     getattr(provider, "raw_results", [])
@@ -130,7 +150,9 @@ class MediaDiscovery:
         ):
             retrieval_reflection = retrieval_check_node.run({
                 "provider_candidates": provider_candidates,
-                "provider_queries": effective_provider_queries,
+                "tavily_queries": effective_tavily_queries,
+                "weibo_queries": effective_weibo_queries,
+                "weibo_queries": effective_weibo_queries,
                 "thresholds": {
                     "tavily": int(adaptive.get("tavily_min_valid_results", 3)),
                     "weibo": int(adaptive.get("weibo_min_valid_results", 2)),
@@ -199,19 +221,6 @@ class MediaDiscovery:
                     if progress:
                         progress(f"{name} 自适应补搜失败：{exc}")
 
-        # Stage 1 snapshot: keep every valid candidate before relevance/title filtering.
-        stage1 = []
-        seen_urls: set[str] = set()
-        for candidate in raw:
-            url = candidate.url.strip()
-            key = canonical_url(url) if url else ""
-            if not key or key in seen_urls:
-                continue
-            seen_urls.add(key)
-            stage1.append(candidate)
-            if len(stage1) >= max(limit * 3, 20):
-                break
-
         filtered = []
         time_filtered_count = 0
         for candidate in raw:
@@ -238,6 +247,52 @@ class MediaDiscovery:
                 except ValueError:
                     pass
             filtered.append(candidate)
+
+        # Stage 1 snapshot: only time-valid and prefiltered candidates are persisted.
+        stage1_by_url: dict[str, MediaCandidate] = {}
+        for candidate in filtered:
+            url = candidate.url.strip()
+            key = canonical_url(url) if url else ""
+            if not key:
+                continue
+            existing = stage1_by_url.get(key)
+            if existing is not None:
+                existing_appearances = list(existing.metadata.get("appearances") or [])
+                new_appearances = list(candidate.metadata.get("appearances") or [])
+                merged_appearances = []
+                seen_appearances: set[tuple] = set()
+                for appearance in existing_appearances + new_appearances:
+                    if not isinstance(appearance, dict):
+                        continue
+                    appearance_key = (
+                        appearance.get("query"), appearance.get("channel"),
+                        appearance.get("rank"), appearance.get("score"),
+                    )
+                    if appearance_key in seen_appearances:
+                        continue
+                    seen_appearances.add(appearance_key)
+                    merged_appearances.append(appearance)
+                metadata = dict(existing.metadata)
+                metadata.update({
+                    key: value for key, value in candidate.metadata.items()
+                    if key != "appearances" and key not in metadata
+                })
+                metadata["appearances"] = merged_appearances
+                stage1_by_url[key] = replace(
+                    existing,
+                    snippet=(
+                        existing.snippet
+                        if len(existing.snippet) >= len(candidate.snippet)
+                        else candidate.snippet
+                    ),
+                    discovered_by=tuple(dict.fromkeys(
+                        existing.discovered_by + candidate.discovered_by
+                    )),
+                    metadata=metadata,
+                )
+                continue
+            stage1_by_url[key] = candidate
+        stage1 = list(stage1_by_url.values())
 
         selected, dedup_stats = select_candidates(
             filtered,

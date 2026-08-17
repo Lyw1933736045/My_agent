@@ -1,6 +1,6 @@
 import unittest
 
-from My_agent.tools.text_chunking import select_chunks, split_text
+from My_agent.tools.text_chunking import select_chunks, select_relevance_chunks, split_text
 
 
 class TextChunkingTests(unittest.TestCase):
@@ -39,6 +39,17 @@ class TextChunkingTests(unittest.TestCase):
         )
 
         self.assertEqual(selected, ["第一段", "第三段", "第五段"])
+
+    def test_relevance_chunks_prioritize_core_over_support(self):
+        chunks = ["只有监管背景。", "人民币外汇期货试点进展。"]
+        selected = select_relevance_chunks(
+            chunks,
+            topic="人民币外汇期货试点",
+            core_terms=["人民币外汇期货"],
+            support_terms=["监管"],
+            top_k=1,
+        )
+        self.assertEqual(selected, [chunks[1]])
 
 
 if __name__ == "__main__":

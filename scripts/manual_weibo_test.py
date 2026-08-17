@@ -14,9 +14,8 @@ PROJECTS_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECTS_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECTS_ROOT))
 
-from My_agent.agent import FinancialMediaAgent
 from My_agent.tools.weibo_provider import WeiboProvider
-from My_agent.utils.config import PROJECT_ROOT, Settings
+from My_agent.utils.config import PROJECT_ROOT
 
 
 DEFAULT_COOKIE_FILE = PROJECT_ROOT.parent / "weibo_cookie.txt"
@@ -76,12 +75,7 @@ def build_weibo_query(args: argparse.Namespace) -> tuple[str | None, str]:
     if args.keyword:
         return None, " ".join(args.keyword.split())
     question = " ".join((args.question or "").split())
-    agent = FinancialMediaAgent(Settings())
-    plan = agent.create_plan(question)
-    query = " ".join(plan.provider_queries.get("weibo", "").split())
-    if not query:
-        raise ValueError("LLM 未生成可用的微博 balanced 搜索词")
-    return question, query
+    return question, question
 
 
 def default_output_path() -> Path:

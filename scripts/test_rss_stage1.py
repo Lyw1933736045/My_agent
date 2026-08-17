@@ -1,4 +1,4 @@
-"""只运行 RSS Stage 1，并把候选及正文状态保存到 SQLite。"""
+"""只运行 RSS Stage 1，并把候选及正文状态保存到 PostgreSQL。"""
 
 from __future__ import annotations
 
@@ -8,9 +8,11 @@ from uuid import uuid4
 
 from dotenv import load_dotenv
 
+from ..agent import FinancialMediaAgent
 from ..run_repository import RunRepository
+from ..tools.media_relevance import is_media_candidate_relevant
 from ..tools.rss_provider import RSSProvider
-from ..utils.config import ENV_FILE, PROJECT_ROOT
+from ..utils.config import ENV_FILE, Settings
 from ..utils.media_sources import load_media_sources, resolve_feed_url
 
 
@@ -23,6 +25,8 @@ def main() -> int:
     if args.limit < 1:
         parser.error("--limit 必须是正整数")
     load_dotenv(ENV_FILE)
+    settings = Settings()
+    plan = FinancialMediaAgent(settings).create_plan(args.query)
     config = load_media_sources()["rss"]
     feeds = []
     for feed in config["feeds"]:
@@ -44,6 +48,12 @@ def main() -> int:
         retry_wait_max=float(config["retry_wait_max_seconds"]),
     )
     candidates = provider.search([args.query], limit=args.limit, progress=print)
+    candidates = [
+        item for item in candidates
+        if is_media_candidate_relevant(
+            item.title, item.snippet, plan.newsnow_rss_core, plan.newsnow_rss_support, "rss"
+        )
+    ]
     unique, seen = [], set()
     for item in candidates:
         if item.url in seen:
@@ -54,9 +64,11 @@ def main() -> int:
             break
 
     run_id = f"rss-{datetime.now(timezone.utc):%Y%m%d%H%M%S}-{uuid4().hex[:8]}"
-    repository = RunRepository(PROJECT_ROOT / "data" / "my_agent.db")
+    repository = RunRepository(settings.DATABASE_URL)
     repository.create(run_id=run_id, query=args.query, topic=args.query,
-                      proposed_queries=[args.query], provider_queries={"rss": args.query})
+                      tavily_queries=plan.tavily_queries,
+                      newsnow_rss_core=plan.newsnow_rss_core,
+                      newsnow_rss_support=plan.newsnow_rss_support)
     repository.approve(run_id, [args.query])
     repository.save_candidates(run_id, [{
         "title": item.title, "url": item.url, "snippet": item.snippet,

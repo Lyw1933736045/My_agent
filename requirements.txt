@@ -10,3 +10,6 @@ requests>=2.31.0
 fastapi>=0.115.0
 uvicorn>=0.30.0
 markdown-it-py>=3.0.0
+SQLAlchemy>=2.0.0
+alembic>=1.13.0
+psycopg[binary]>=3.1.0

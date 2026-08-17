@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     QUERY_ENGINE_BASE_URL: Optional[str] = None
     QUERY_ENGINE_MODEL_NAME: str = Field(..., description="LLM 模型名")
     TAVILY_API_KEY: str = Field("", description="Tavily API Key（仅搜索流程需要）")
+    DATABASE_URL: str = Field(
+        "postgresql+psycopg://postgres:postgres@127.0.0.1:5432/my_agent",
+        description="项目唯一 PostgreSQL 连接，例如 postgresql+psycopg://user:pass@host/db",
+    )
 
     SEARCH_CONTENT_MAX_LENGTH: int = 20000
     MAX_REFLECTIONS: int = 1

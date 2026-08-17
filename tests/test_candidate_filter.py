@@ -56,6 +56,23 @@ class CandidateContentFilterTests(unittest.TestCase):
                 "documents": [document],
             })
 
+    def test_content_filter_accepts_separate_core_and_support_terms(self):
+        candidate = _candidate()
+        document = MediaDocument(candidate, candidate.url, "now", "text/html", "正文片段")
+        llm = _FakeLLM([json.dumps([
+            {"index": 0, "relevant": True, "score": 90, "reason": "正文实质相关"}
+        ], ensure_ascii=False)])
+        decisions = CandidateFilterNode(llm).run({
+            "stage": "content",
+            "topic": "虚构事件",
+            "newsnow_rss_core": ["核心事项"],
+            "newsnow_rss_support": ["监管"],
+            "documents": [document],
+        })
+        self.assertTrue(decisions[0].relevant)
+        self.assertEqual(llm.calls[0]["newsnow_rss_core"], ["核心事项"])
+        self.assertEqual(llm.calls[0]["newsnow_rss_support"], ["监管"])
+
 
 if __name__ == "__main__":
     unittest.main()

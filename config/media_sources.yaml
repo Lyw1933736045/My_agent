@@ -8,7 +8,7 @@ adaptive_retrieval:
 
 # NewsNow 提供各平台当前热榜；查询词会在本地匹配标题。
 newsnow:
-  enabled: false
+  enabled: true
   api_url: "https://newsnow.busiyi.world/api/s"
   timeout_seconds: 30
   max_retries: 1
@@ -79,10 +79,10 @@ newsnow:
 
 # RSS 用于补充不一定进入热榜的最新媒体文章。
 rss:
-  enabled: false
+  enabled: true
   timeout_seconds: 25
   max_content_bytes: 6000000
-  max_age_days: 15
+  max_age_days: 60
   default_max_items: 0
   request_interval_min_seconds: 0.5
   request_interval_max_seconds: 1.0
@@ -211,9 +211,10 @@ rss:
 # Tavily 在 NewsNow、RSS 完成后执行，只用于发现 URL；简报仍重新抓取正文。
 tavily:
   enabled: true
-  max_results_per_query: 10
+  search_rounds: 2
+  max_results_per_query: 50
   targeted_search_enabled: true
-  targeted_max_results: 20
+  targeted_max_results: 50
   domestic_finance_domains:
     - cls.cn
     - yicai.com
@@ -259,24 +260,22 @@ weibo:
   cookie_file: "${WEIBO_COOKIE_FILE}"
   search_url: "https://s.weibo.com/weibo"
   comments_url: "https://weibo.com/ajax/statuses/buildComments"
-  target_posts: 20
-  max_search_pages: 3
+  target_posts: 30
+  max_search_pages: 5
   timeout_seconds: 20
   request_interval_min_seconds: 4
   request_interval_max_seconds: 8
   trust_env_proxy: false
   comments:
-    enabled: false
-    max_posts: 2
+    enabled: true
+    max_posts: 5
     request_interval_min_seconds: 5
     request_interval_max_seconds: 10
 
 selection:
   candidate_limit: 100
-  read_limit: 20
   max_per_source: 5
-  # 0表示分析已抓取的全部社交媒体候选。
-  social_read_limit: 0
   max_per_source: 3
+  content_relevance_top_k: 5
   relevance_model_min_score: 30
   content_filter_max_chars: 5000

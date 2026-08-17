@@ -22,6 +22,9 @@ dependencies = [
   "fastapi>=0.115.0",
   "uvicorn>=0.30.0",
   "markdown-it-py>=3.0.0",
+  "SQLAlchemy>=2.0.0",
+  "alembic>=1.13.0",
+  "psycopg[binary]>=3.1.0",
 ]
 
 [project.scripts]
@@ -38,6 +41,7 @@ packages = [
   "financial_single_agent.tools",
   "financial_single_agent.utils",
   "financial_single_agent.evaluation",
+  "financial_single_agent.knowledge",
 ]
 package-dir = {financial_single_agent = "."}
 

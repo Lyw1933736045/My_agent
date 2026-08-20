@@ -4,20 +4,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
-import re
 from typing import Any
 
-from ..prompts.qa_prompts import SYSTEM_PROMPT_QA_ANSWER, SYSTEM_PROMPT_QA_RERANK
+from ..prompts.qa_prompts import SYSTEM_PROMPT_QA_ANSWER
 from ..run_repository import CaseRecord, RunRepository
-from ..utils.dedup import canonical_url
+from ..utils.config import Settings
 from ..utils.text_processing import extract_json
-from .text_chunking import split_text
+from .embedding_service import EmbeddingService
+from .knowledge_indexer import KnowledgeIndexer, index_case_safely
+from .reranker_service import RerankerService
+from .vector_retriever import VectorRetriever
 
 
-_STOP_PHRASES = (
-    "我想知道", "请问", "帮我", "请帮我", "请", "总结一下", "总结", "概括一下",
-    "概括", "有哪些", "有何", "相关的", "相关新闻", "相关信息", "一下", "如何",
-)
+ANALYSIS_TYPES = ("media_insight", "social_insight", "structured_analysis")
+DEEP_TYPES = ("raw_document", "media_insight", "social_insight", "structured_analysis")
+CASE_RAW_TYPES = ("raw_document",)
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,8 @@ class QAEvidence:
     title: str = ""
     url: str = ""
     chunk_id: str | None = None
+    origin: str | None = None
+    case_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -46,54 +49,52 @@ class QAResult:
     citations: list[QACitation] = field(default_factory=list)
     evidence: list[QAEvidence] = field(default_factory=list)
     retrieved_count: int = 0
-
-
-def _compact(value: str) -> str:
-    value = str(value or "").casefold()
-    return re.sub(r"[^\w\u4e00-\u9fff]+", "", value)
-
-
-def _query_terms(question: str) -> list[str]:
-    value = " ".join(str(question or "").split())
-    for phrase in sorted(_STOP_PHRASES, key=len, reverse=True):
-        value = value.replace(phrase, " ")
-    values = re.findall(r"[\u4e00-\u9fff]{2,}|[a-zA-Z0-9][a-zA-Z0-9_+-]{1,}", value)
-    terms = list(dict.fromkeys(item.casefold() for item in values if item.strip()))
-    return terms or [_compact(question)]
-
-
-def _lexical_score(question: str, text: str, title: str = "") -> int:
-    terms = _query_terms(question)
-    body = str(text or "").casefold()
-    heading = str(title or "").casefold()
-    score = 0
-    for term in terms:
-        if not term:
-            continue
-        occurrences = body.count(term)
-        if occurrences:
-            score += min(occurrences, 4) * (3 if len(term) >= 3 else 2)
-        if term in heading:
-            score += 5
-    return score
-
-
-def _json_text(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    retrieval_scope: str = ""
 
 
 class CaseQAService:
     """One bounded retrieval-and-answer pass for a selected case."""
 
-    def __init__(self, repository: RunRepository, llm_client) -> None:
+    def __init__(
+        self,
+        repository: RunRepository,
+        llm_client,
+        settings: Settings | None = None,
+        embedding_service: EmbeddingService | None = None,
+        reranker_service: RerankerService | None = None,
+        retriever: VectorRetriever | None = None,
+        indexer: KnowledgeIndexer | None = None,
+    ) -> None:
         self.repository = repository
         self.llm_client = llm_client
+        self.settings = settings
+        self.embedding = embedding_service
+        self.reranker = reranker_service
+        self.retriever = retriever or VectorRetriever(repository)
+        self.indexer = indexer
+        self.vector_top_k = getattr(settings, "RAG_VECTOR_TOP_K", 30) if settings else 30
+        self.case_top_k = getattr(settings, "RAG_CASE_TOP_K", 20) if settings else 20
+        self.global_top_k = getattr(settings, "RAG_GLOBAL_TOP_K", 15) if settings else 15
+        self.rerank_top_n = getattr(settings, "RAG_RERANK_TOP_N", 8) if settings else 8
+
+    def _embedding(self) -> EmbeddingService:
+        if self.embedding is None:
+            self.embedding = EmbeddingService.from_settings(self.settings)
+        return self.embedding
+
+    def _reranker(self) -> RerankerService:
+        if self.reranker is None:
+            self.reranker = RerankerService.from_settings(self.settings)
+        return self.reranker
 
     def answer(
         self,
         case: CaseRecord,
         question: str,
         mode: str,
+        *,
+        include_historical: bool | None = None,
+        source_types: tuple[str, ...] | None = None,
     ) -> QAResult:
         if mode not in {"fast", "analysis", "deep"}:
             raise ValueError("问答模式必须是 fast、analysis 或 deep")
@@ -101,13 +102,24 @@ class CaseQAService:
         if len(question) < 2:
             raise ValueError("问题至少需要两个字符")
 
-        sources = self._source_catalog(case.report_data)
+        retrieval_scope = "brief" if mode == "fast" else "case"
         if mode == "fast":
+            sources = self._source_catalog(case.report_data)
             context, retrieval_evidence = self._fast_context(case, question, sources)
         elif mode == "analysis":
-            context, retrieval_evidence = self._analysis_context(case, question, sources)
+            context, retrieval_evidence, sources = self._vector_context(
+                case,
+                question,
+                source_types=source_types or ANALYSIS_TYPES,
+                include_historical=False,
+            )
         else:
-            context, retrieval_evidence = self._deep_context(case, question, sources)
+            historical = True if include_historical is None else include_historical
+            types = source_types or DEEP_TYPES
+            retrieval_scope = "case+global" if historical else "case_raw"
+            context, retrieval_evidence, sources = self._vector_context(
+                case, question, source_types=types, include_historical=historical
+            )
         if not context:
             raise ValueError("当前案例没有可用于该模式的材料")
 
@@ -142,6 +154,7 @@ class CaseQAService:
             evidence=self._normalize_evidence(raw_evidence, sources, context)
             or list(retrieval_evidence),
             retrieved_count=len(context),
+            retrieval_scope=retrieval_scope,
         )
 
     @staticmethod
@@ -161,36 +174,13 @@ class CaseQAService:
             result[source["source_id"]] = source
         return result
 
-    def _source_for_item(
-        self,
-        item: dict,
-        sources: dict[str, dict],
-        fallback_id: str,
-    ) -> dict:
-        url = str(item.get("url") or "").strip()
-        canonical = canonical_url(url) if url else ""
-        for source in sources.values():
-            if canonical and canonical_url(str(source.get("url") or "")) == canonical:
-                return source
-        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
-        source_id = str(item.get("source_id") or metadata.get("source_id") or fallback_id)
-        source = {
-            "source_id": source_id,
-            "title": str(item.get("title") or "未命名来源"),
-            "source_name": str(item.get("source_name") or ""),
-            "url": url,
-            "published_at": item.get("published_at"),
-            "source_type": "social" if item.get("source_group") == "social_media" else "media",
-        }
-        sources.setdefault(source_id, source)
-        return source
-
     def _fast_context(
         self,
         case: CaseRecord,
         question: str,
         sources: dict[str, dict],
     ) -> tuple[list[dict], list[QAEvidence]]:
+        del question, sources
         data = case.report_data if isinstance(case.report_data, dict) else {}
         selected = {
             "title": data.get("title") or case.topic,
@@ -204,137 +194,105 @@ class CaseQAService:
         }
         if not selected["title"] and not any(selected.values()):
             return [], []
-        return [{"kind": "brief", "content": selected}], []
+        return [{"kind": "brief", "content": selected, "origin": "current"}], []
 
-    def _analysis_context(
+    def _vector_context(
         self,
         case: CaseRecord,
         question: str,
-        sources: dict[str, dict],
-    ) -> tuple[list[dict], list[QAEvidence]]:
-        prepared = self.repository.aggregate_case_prepared_analysis(case.case_id) or {}
-        items = [
-            *list(prepared.get("media_insights") or []),
-            *list(prepared.get("social_insights") or []),
-        ]
-        ranked = []
-        for index, item in enumerate(items, 1):
-            if not isinstance(item, dict):
-                continue
-            source = self._source_for_item(item, sources, f"I{index:02d}")
-            score = _lexical_score(
-                question,
-                _json_text({
-                    "reported_facts": item.get("reported_facts"),
-                    "interpretations": item.get("interpretations"),
-                    "named_views": item.get("named_views"),
-                    "timeline_events": (item.get("metadata") or {}).get("timeline_events"),
-                }),
-                str(item.get("title") or ""),
-            )
-            ranked.append((score, item, source))
-        ranked.sort(key=lambda value: (-value[0], str(value[1].get("published_at") or "")),)
-        selected = ranked[:12]
+        *,
+        source_types: tuple[str, ...],
+        include_historical: bool,
+    ) -> tuple[list[dict], list[QAEvidence], dict[str, dict]]:
+        chunks = self._retrieve(case, question, source_types, include_historical)
+        if not chunks:
+            index_case_safely(self.repository, case.case_id, self.settings)
+            chunks = self._retrieve(case, question, source_types, include_historical)
+        if not chunks:
+            return [], [], {}
+        ranked = self._rerank(question, chunks)
+        selected = ranked[: self.rerank_top_n]
         context = []
-        for _, item, source in selected:
-            context.append({
-                "kind": "structured_insight",
-                "source_id": source["source_id"],
-                "title": item.get("title"),
-                "source_name": item.get("source_name"),
+        evidence = []
+        sources: dict[str, dict] = {}
+        for item in selected:
+            origin = "historical" if item.get("case_id") != case.case_id else "current"
+            source_id = str(item.get("source_id") or "")
+            if origin == "historical":
+                source_id = f"hist:{item.get('case_id')}:{source_id}"
+            source = {
+                "source_id": source_id,
+                "title": str(item.get("title") or "未命名来源"),
+                "source_name": "",
+                "url": str(item.get("url") or ""),
                 "published_at": item.get("published_at"),
-                "reported_facts": item.get("reported_facts") or [],
-                "interpretations": item.get("interpretations") or [],
-                "affected_parties": item.get("affected_parties") or [],
-                "risks_or_disagreements": item.get("risks_or_disagreements") or [],
-                "statistics": item.get("statistics") or [],
-                "named_views": item.get("named_views") or [],
-                "timeline_events": (item.get("metadata") or {}).get("timeline_events") or [],
+                "source_type": item.get("source_type"),
+                "case_id": item.get("case_id"),
+                "origin": origin,
+            }
+            sources[source_id] = source
+            context.append({
+                "kind": "knowledge_chunk",
+                "chunk_id": item.get("chunk_id"),
+                "source_id": source_id,
+                "source_type": item.get("source_type"),
+                "title": item.get("title"),
+                "url": item.get("url"),
+                "published_at": item.get("published_at"),
+                "content": item.get("content"),
+                "origin": origin,
+                "case_id": item.get("case_id"),
+                "similarity_score": item.get("similarity_score"),
+                "rerank_score": item.get("rerank_score"),
             })
-        return context, []
+            evidence.append(QAEvidence(
+                source_id=source_id,
+                quote=str(item.get("content") or "")[:280],
+                title=str(item.get("title") or ""),
+                url=str(item.get("url") or ""),
+                chunk_id=str(item.get("chunk_id") or "") or None,
+                origin=origin,
+                case_id=str(item.get("case_id") or "") or None,
+            ))
+        return context, evidence, sources
 
-    def _deep_context(
+    def _retrieve(
         self,
         case: CaseRecord,
         question: str,
-        sources: dict[str, dict],
-    ) -> tuple[list[dict], list[QAEvidence]]:
-        rows = self.repository.list_case_candidates(case.case_id)
-        candidates: list[dict] = []
-        for row_index, row in enumerate(rows, 1):
-            content = str(row.get("content") or "").strip()
-            if not content:
+        source_types: tuple[str, ...],
+        include_historical: bool,
+    ) -> list[dict]:
+        query_vector = self._embedding().embed_query(question)
+        current = self.retriever.search_case(
+            query_vector,
+            case.case_id,
+            source_types=list(source_types),
+            top_k=self.vector_top_k if not include_historical else self.case_top_k,
+        )
+        if not include_historical:
+            return current
+        historical = self.retriever.search_global(
+            query_vector,
+            case.case_id,
+            source_types=list(source_types),
+            top_k=self.global_top_k,
+        )
+        merged = []
+        seen = set()
+        for item in [*current, *historical]:
+            key = (item.get("case_id"), item.get("chunk_id") or item.get("content_hash"))
+            if key in seen:
                 continue
-            source = self._source_for_item(row, sources, f"D{row_index:02d}")
-            chunks = split_text(content, chunk_size=1200, overlap=150)
-            for chunk_index, chunk in enumerate(chunks):
-                score = _lexical_score(question, chunk, str(row.get("title") or ""))
-                candidates.append({
-                    "chunk_id": f"D{row_index:02d}-{chunk_index:02d}",
-                    "source_id": source["source_id"],
-                    "title": row.get("title") or "未命名来源",
-                    "source_name": row.get("source") or "",
-                    "url": row.get("url") or "",
-                    "published_at": row.get("published_at"),
-                    "content": chunk,
-                    "lexical_score": score,
-                })
-        candidates.sort(key=lambda item: (-int(item["lexical_score"]), str(item.get("published_at") or "")))
-        candidates = candidates[:20]
-        if not candidates:
-            return [], []
-        candidates = self._rerank(question, candidates)
-        selected = candidates[:8]
-        context = [
-            {
-                "kind": "raw_document_chunk",
-                "chunk_id": item["chunk_id"],
-                "source_id": item["source_id"],
-                "title": item["title"],
-                "source_name": item["source_name"],
-                "published_at": item["published_at"],
-                "content": item["content"],
-            }
-            for item in selected
-        ]
-        evidence = [QAEvidence(
-            source_id=item["source_id"],
-            quote=str(item["content"])[:280],
-            title=str(item["title"]),
-            url=str(item["url"]),
-            chunk_id=str(item["chunk_id"]),
-        ) for item in selected]
-        return context, evidence
+            seen.add(key)
+            merged.append(item)
+        return merged
 
-    def _rerank(self, question: str, candidates: list[dict]) -> list[dict]:
-        payload = {
-            "question": question,
-            "candidates": [
-                {
-                    "chunk_id": item["chunk_id"],
-                    "title": item["title"],
-                    "source_name": item["source_name"],
-                    "preview": str(item["content"])[:420],
-                    "lexical_score": item["lexical_score"],
-                }
-                for item in candidates
-            ],
-        }
+    def _rerank(self, question: str, chunks: list[dict]) -> list[dict]:
         try:
-            response = self.llm_client.invoke(
-                SYSTEM_PROMPT_QA_RERANK,
-                json.dumps(payload, ensure_ascii=False),
-            )
-            parsed = extract_json(response)
-            ranked_ids = parsed.get("ranked_chunk_ids") if isinstance(parsed, dict) else None
-            if not isinstance(ranked_ids, list):
-                return candidates
-            by_id = {item["chunk_id"]: item for item in candidates}
-            ordered = [by_id[item] for item in ranked_ids if item in by_id]
-            ordered.extend(item for item in candidates if item not in ordered)
-            return ordered
+            return self._reranker().rerank(question, chunks, top_n=self.rerank_top_n)
         except Exception:
-            return candidates
+            return list(chunks)
 
     @staticmethod
     def _normalize_citations(raw: Any, sources: dict[str, dict]) -> list[QACitation]:
@@ -382,5 +340,7 @@ class CaseQAService:
                 title=str(source.get("title") or ""),
                 url=str(source.get("url") or ""),
                 chunk_id=context_item.get("chunk_id"),
+                origin=context_item.get("origin"),
+                case_id=context_item.get("case_id"),
             ))
         return result

@@ -1,9 +1,7 @@
 (() => {
   "use strict";
 
-  const params = new URLSearchParams(location.search);
-  const caseRef = params.get("case") || "case1";
-  const caseLabel = caseRef === "case1" ? "案例1" : "当前案例";
+  const caseRef = window.CaseSim.caseRef();
   const statusLabels = {
     created: "已创建",
     running: "运行中",
@@ -16,6 +14,8 @@
   const els = {
     message: document.getElementById("sim-message"),
     meta: document.getElementById("sim-meta"),
+    build: document.getElementById("sim-build"),
+    generate: document.getElementById("sim-generate"),
     start: document.getElementById("sim-start"),
     stop: document.getElementById("sim-stop"),
     rounds: document.getElementById("sim-rounds"),
@@ -30,12 +30,22 @@
     actionChart: document.getElementById("action-chart"),
     groupChart: document.getElementById("group-chart"),
     topicChart: document.getElementById("topic-chart"),
+    keywordChart: document.getElementById("keyword-chart"),
+    keywordScope: document.getElementById("keyword-scope"),
+    keywordTooltip: document.getElementById("keyword-tooltip"),
     disclaimer: document.getElementById("analysis-disclaimer"),
     finding: document.getElementById("analysis-finding"),
   };
+  const formIds = {
+    question: document.getElementById("sim-question"),
+    asOf: document.getElementById("sim-as-of"),
+    horizon: document.getElementById("sim-horizon"),
+    maxAgents: document.getElementById("sim-max-agents"),
+  };
 
-  document.getElementById("to-graph").href = `/graph?case=${encodeURIComponent(caseRef)}`;
-  els.meta.textContent = `${caseLabel} · 来源：模拟结果`;
+  document.getElementById("to-graph").href = caseRef
+    ? `/graph?case=${encodeURIComponent(caseRef)}`
+    : "/graph";
   if (!window.d3) {
     els.message.textContent = "D3 加载失败，无法显示关系图。";
     els.message.classList.add("is-error");
@@ -52,6 +62,9 @@
     actionChart: els.actionChart,
     groupChart: els.groupChart,
     topicChart: els.topicChart,
+    keywordChart: els.keywordChart,
+    keywordScope: els.keywordScope,
+    keywordTooltip: els.keywordTooltip,
     disclaimer: els.disclaimer,
     finding: els.finding,
   });
@@ -73,13 +86,7 @@
   let overviewAgents = [];
 
   async function api(path, options = {}) {
-    const response = await fetch(`/api/v1/simulation/cases/${encodeURIComponent(caseRef)}${path}`, {
-      headers: { "Content-Type": "application/json" },
-      ...options,
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.detail || `请求失败（${response.status}）`);
-    return result;
+    return window.CaseSim.api(caseRef, path, options);
   }
 
   function message(text, failed = false) {
@@ -87,10 +94,17 @@
     els.message.classList.toggle("is-error", failed);
   }
 
-  function setBusy(running) {
-    els.start.disabled = running;
+  function setBusy(running, { canStart = true, building = false } = {}) {
+    els.start.disabled = running || !canStart;
     els.stop.disabled = !running;
-    els.rounds.disabled = running;
+    els.rounds.disabled = running || !canStart;
+    if (els.generate) {
+      els.generate.disabled = running || building;
+      formIds.question.disabled = running || building;
+      formIds.asOf.disabled = running || building;
+      formIds.horizon.disabled = running || building;
+      if (formIds.maxAgents) formIds.maxAgents.disabled = running || building;
+    }
   }
 
   function showStats(counts) {
@@ -189,7 +203,7 @@
     latestRunId = runId;
     const status = await api(`/runs/${runId}`);
     const running = ["created", "running", "stopping"].includes(status.status);
-    setBusy(running);
+    setBusy(running, { canStart: true });
     const progress = status.total_rounds
       ? ` · ${status.current_round || 0}/${status.total_rounds} 轮`
       : "";
@@ -215,37 +229,76 @@
       }
     } catch (error) {
       message(error.message, true);
-      setBusy(false);
+      setBusy(false, { canStart: true });
     }
   }
 
   async function refresh() {
     clearTimeout(pollTimer);
+    if (!caseRef) {
+      els.meta.textContent = "未绑定简报";
+      els.build.hidden = true;
+      setBusy(false, { canStart: false });
+      message("请从简报工作区打开舆情演化，这样会加载该简报自己的图谱和推演。", true);
+      return;
+    }
     const overview = await api("/overview");
     overviewAgents = overview.agents || [];
     showStats({ agents: overviewAgents.length });
-    const zep = overview.zep || {};
-    if (!zep.ready) {
-      setBusy(false);
-      els.start.disabled = true;
-      message(zep.detail || "Zep 真实图谱未就绪，已终止推演。", true);
-      if (overview.latest_run) await loadRun(overview.latest_run.simulation_id);
-      else view.render(placeholderGraph());
+    els.meta.textContent = `${overview.topic || "当前简报"} · 来源：模拟结果`;
+    window.CaseSim.fillForm(formIds, overview);
+    const building = window.CaseSim.jobRunning(overview);
+    if (building) {
+      els.build.hidden = false;
+      setBusy(false, { canStart: false, building: true });
+      message(overview.job.progress || "正在生成知识图谱…");
+      pollTimer = setTimeout(() => refresh().catch((error) => message(error.message, true)), 2500);
       return;
     }
+    if (!overview.graph_ready || !overview.can_simulate) {
+      els.build.hidden = false;
+      setBusy(false, { canStart: false });
+      els.status.textContent = "未运行";
+      view.render(placeholderGraph());
+      if (overview.job && overview.job.status === "failed") {
+        message(overview.job.error || "知识图谱生成失败", true);
+      } else {
+        message("这份简报还没有可推演的知识图谱。填写问题后先生成图谱，再设置轮数开始演化。");
+      }
+      return;
+    }
+    els.build.hidden = false;
+    els.generate.textContent = "重建知识图谱";
     if (overview.latest_run) {
       await loadRun(overview.latest_run.simulation_id);
       if (["created", "running", "stopping"].includes(overview.latest_run.status)) poll();
     } else {
-      setBusy(false);
+      setBusy(false, { canStart: true });
       els.status.textContent = "未运行";
       view.render(placeholderGraph());
-      message(`已载入 ${overviewAgents.length} 个智能体。设置轮数后启动推演。`);
+      message(`图谱已就绪，共 ${overviewAgents.length} 个推演角色。设置轮数后开始演化。`);
     }
   }
 
+  els.generate.addEventListener("click", async () => {
+    const rebuilding = els.generate.textContent.includes("重建");
+    if (rebuilding && !window.confirm("重建会覆盖当前图谱，并清除这份简报的旧推演结果。确定继续？")) {
+      return;
+    }
+    setBusy(false, { canStart: false, building: true });
+    try {
+      const body = window.CaseSim.collectForm(formIds);
+      await api("/graph", { method: "POST", body: JSON.stringify(body) });
+      message("已开始生成知识图谱，页面会自动更新。");
+      await refresh();
+    } catch (error) {
+      message(error.message, true);
+      setBusy(false, { canStart: false });
+    }
+  });
+
   els.start.addEventListener("click", async () => {
-    setBusy(true);
+    setBusy(true, { canStart: true });
     try {
       const rounds = Number(els.rounds.value) || 4;
       const status = await api("/runs", { method: "POST", body: JSON.stringify({ rounds }) });
@@ -254,7 +307,7 @@
       await poll();
     } catch (error) {
       message(error.message, true);
-      setBusy(false);
+      setBusy(false, { canStart: true });
     }
   });
 
@@ -267,7 +320,7 @@
       await poll();
     } catch (error) {
       message(error.message, true);
-      setBusy(false);
+      setBusy(false, { canStart: true });
     }
   });
 

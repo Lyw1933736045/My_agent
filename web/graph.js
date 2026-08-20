@@ -1,16 +1,26 @@
 (() => {
   "use strict";
 
-  const params = new URLSearchParams(location.search);
-  const caseRef = params.get("case") || "case1";
-  const caseLabel = caseRef === "case1" ? "案例1" : "当前案例";
+  const caseRef = window.CaseSim.caseRef();
   const messageEl = document.getElementById("graph-message");
   const detailEl = document.getElementById("graph-detail");
+  const buildPanel = document.getElementById("graph-build");
+  const rebuildBtn = document.getElementById("graph-rebuild");
+  const generateBtn = document.getElementById("graph-generate");
+  const ids = {
+    question: document.getElementById("graph-question"),
+    asOf: document.getElementById("graph-as-of"),
+    horizon: document.getElementById("graph-horizon"),
+    maxAgents: document.getElementById("graph-max-agents"),
+  };
   let fullGraph = null;
-  let filter = "actors";
+  let filter = "all";
+  let pollTimer = null;
 
-  document.getElementById("to-simulation").href = `/simulation?case=${encodeURIComponent(caseRef)}`;
-  document.getElementById("graph-meta").textContent = `${caseLabel} · 来源：真实证据`;
+  document.getElementById("to-simulation").href = caseRef
+    ? `/simulation?case=${encodeURIComponent(caseRef)}`
+    : "/simulation";
+  document.getElementById("back-brief").href = "/";
   if (!window.d3) {
     messageEl.textContent = "图形组件加载失败，无法显示关系图。";
     messageEl.classList.add("is-error");
@@ -29,28 +39,11 @@
 
   function applyFilter(data) {
     if (filter === "all") return data;
-    if (filter === "actors") {
-      const nodes = data.nodes.filter((node) => node.is_actor || node.node_type === "actor");
-      const keep = new Set(nodes.map((node) => node.id));
-      return {
-        ...data,
-        nodes,
-        edges: data.edges.filter((edge) => keep.has(edge.source) && keep.has(edge.target)),
-      };
-    }
-    const actorIds = new Set(
-      data.nodes.filter((node) => node.is_actor || node.node_type === "actor").map((node) => node.id),
-    );
-    const keep = new Set(actorIds);
-    data.edges.forEach((edge) => {
-      if (actorIds.has(edge.source) || actorIds.has(edge.target)) {
-        keep.add(edge.source);
-        keep.add(edge.target);
-      }
-    });
+    const nodes = data.nodes.filter((node) => node.simulation_start);
+    const keep = new Set(nodes.map((node) => node.id));
     return {
       ...data,
-      nodes: data.nodes.filter((node) => keep.has(node.id)),
+      nodes,
       edges: data.edges.filter((edge) => keep.has(edge.source) && keep.has(edge.target)),
     };
   }
@@ -59,11 +52,9 @@
     if (!fullGraph) return;
     const data = applyFilter(fullGraph);
     view.render(data);
-    const notice = filter === "actors"
-      ? "当前只显示通过本体筛选、能够发声互动的主体。"
-      : filter === "context"
-        ? "当前显示主体及其直接关联的知识节点。"
-        : (fullGraph.notice || "");
+    const notice = filter === "starters"
+      ? "当前只显示被选入本次推演的角色。"
+      : (fullGraph.notice || "");
     message(`${data.nodes.length} 个节点，${data.edges.length} 条关系。${notice}`);
   }
 
@@ -83,6 +74,58 @@
     };
   }
 
+  function setBusy(busy) {
+    generateBtn.disabled = busy;
+    rebuildBtn.disabled = busy;
+    ids.question.disabled = busy;
+    ids.asOf.disabled = busy;
+    ids.horizon.disabled = busy;
+    if (ids.maxAgents) ids.maxAgents.disabled = busy;
+  }
+
+  async function loadEvidence() {
+    const data = await window.CaseSim.api(caseRef, "/graph/evidence");
+    fullGraph = sanitizeGraph(data);
+    draw();
+  }
+
+  async function refresh() {
+    if (!caseRef) {
+      buildPanel.hidden = true;
+      document.getElementById("graph-meta").textContent = "未绑定简报";
+      message("请从简报工作区打开知识图谱，这样会加载该简报自己的图谱。", true);
+      return;
+    }
+    const overview = await window.CaseSim.api(caseRef, "/overview");
+    const topic = overview.topic || "当前简报";
+    document.getElementById("graph-meta").textContent = `${topic} · 来源：真实证据`;
+    window.CaseSim.fillForm(ids, overview);
+    const running = window.CaseSim.jobRunning(overview);
+    setBusy(running);
+    generateBtn.hidden = Boolean(overview.graph_ready) && !running;
+    rebuildBtn.hidden = !overview.graph_ready;
+    if (running) {
+      buildPanel.hidden = false;
+      message(overview.job.progress || "正在生成知识图谱…");
+      pollTimer = setTimeout(() => refresh().catch((error) => message(error.message, true)), 2500);
+      return;
+    }
+    if (overview.job && overview.job.status === "failed") {
+      buildPanel.hidden = false;
+      message(overview.job.error || "知识图谱生成失败", true);
+      return;
+    }
+    if (!overview.graph_ready) {
+      fullGraph = { nodes: [], edges: [] };
+      view.render(fullGraph);
+      buildPanel.hidden = false;
+      message("这份简报还没有知识图谱。填写推演问题、截止时间和时间窗后即可生成。");
+      return;
+    }
+    buildPanel.hidden = false;
+    await loadEvidence();
+  }
+
   document.querySelectorAll("[data-filter]").forEach((button) => {
     button.addEventListener("click", () => {
       filter = button.dataset.filter;
@@ -93,15 +136,24 @@
     });
   });
 
-  fetch(`/api/v1/simulation/cases/${encodeURIComponent(caseRef)}/graph/evidence`)
-    .then(async (response) => {
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.detail || `请求失败（${response.status}）`);
-      return result;
-    })
-    .then((data) => {
-      fullGraph = sanitizeGraph(data);
-      draw();
-    })
-    .catch((error) => message(error.message || String(error), true));
+  async function generate() {
+    const confirmed = generateBtn.textContent.includes("重新")
+      ? window.confirm("重新生成会覆盖当前图谱，并清除这份简报的旧推演结果。确定继续？")
+      : true;
+    if (!confirmed) return;
+    setBusy(true);
+    try {
+      const body = window.CaseSim.collectForm(ids);
+      await window.CaseSim.api(caseRef, "/graph", { method: "POST", body: JSON.stringify(body) });
+      message("已开始生成知识图谱，页面会自动更新。");
+      await refresh();
+    } catch (error) {
+      message(error.message, true);
+      setBusy(false);
+    }
+  }
+
+  generateBtn.addEventListener("click", generate);
+  rebuildBtn.addEventListener("click", generate);
+  refresh().catch((error) => message(error.message, true));
 })();

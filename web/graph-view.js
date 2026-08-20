@@ -13,9 +13,10 @@
   };
 
   const TYPE_LABELS = {
-    actor: "可发声主体",
+    actor: "推演角色",
     concept: "关联知识",
     agent: "智能体",
+    group: "观点群体",
   };
 
   const RELATION_LABELS = {
@@ -83,7 +84,10 @@
     if (node.node_type === "agent") {
       return Math.min(22, 9 + Math.sqrt(Number(node.influence_count || node.activity_count || 1)) * 1.7);
     }
-    return node.node_type === "actor" ? 12 : 6;
+    if (node.simulation_start || node.actor_kind === "group") {
+      return 12;
+    }
+    return node.node_type === "actor" ? 9 : 6;
   }
 
   function labeled(node) {

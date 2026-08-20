@@ -5,15 +5,18 @@
     form: document.getElementById("query-form"),
     input: document.getElementById("query-input"),
     submitBtn: document.getElementById("submit-btn"),
-    toggleAdvanced: document.getElementById("toggle-advanced"),
-    advancedPanel: document.getElementById("advanced-panel"),
-    requireReview: document.getElementById("require-review"),
+    listBriefsBtn: document.getElementById("list-briefs-btn"),
+    briefsSection: document.getElementById("briefs-section"),
+    briefsList: document.getElementById("briefs-list"),
     sourceOptions: document.querySelectorAll("[data-source]"),
     planSection: document.getElementById("plan-section"),
-    planTopic: document.getElementById("plan-topic"),
     queryList: document.getElementById("query-list"),
-    addQuery: document.getElementById("add-query"),
+    planWeibo: document.getElementById("plan-weibo"),
+    planCore: document.getElementById("plan-core"),
+    planSupport: document.getElementById("plan-support"),
     approveBtn: document.getElementById("approve-btn"),
+    continuePlanBtn: document.getElementById("continue-plan-btn"),
+    cancelPlanBtn: document.getElementById("cancel-plan-btn"),
     progressSection: document.getElementById("progress-section"),
     progressText: document.getElementById("progress-text"),
     cancelBtn: document.getElementById("cancel-btn"),
@@ -25,13 +28,11 @@
     reportTitle: document.getElementById("report-title"),
     reportBody: document.getElementById("report-body"),
     qaPanel: document.getElementById("qa-panel"),
-    qaMode: document.getElementById("qa-mode"),
+    qaThread: document.getElementById("qa-thread"),
+    qaComposer: document.getElementById("qa-composer"),
     qaQuestion: document.getElementById("qa-question"),
     qaSubmit: document.getElementById("qa-submit"),
     qaStatus: document.getElementById("qa-status"),
-    qaAnswer: document.getElementById("qa-answer"),
-    qaCitations: document.getElementById("qa-citations"),
-    reportSources: document.getElementById("report-sources"),
     providerQueryPanel: document.getElementById("provider-query-panel"),
     tavilyQueryInput: document.getElementById("tavily-query-input"),
     weiboQueryInput: document.getElementById("weibo-query-input"),
@@ -44,11 +45,6 @@
     exportPdf: document.getElementById("export-pdf"),
     viewHtml: document.getElementById("view-html"),
     newBtn: document.getElementById("new-btn"),
-    evaluationPanel: document.getElementById("evaluation-panel"),
-    referenceInput: document.getElementById("reference-input"),
-    evaluateBtn: document.getElementById("evaluate-btn"),
-    evaluationProgress: document.getElementById("evaluation-progress"),
-    evaluationResult: document.getElementById("evaluation-result"),
     workspaceLinks: document.getElementById("workspace-links"),
     openGraph: document.getElementById("open-graph"),
     openSimulation: document.getElementById("open-simulation"),
@@ -56,9 +52,9 @@
 
   let currentRunId = null;
   let currentCaseId = null;
+  let viewingCaseId = null;
   let latestMarkdown = "";
   let pollTimer = null;
-  let evaluationTimer = null;
 
   function show(el) {
     el.hidden = false;
@@ -71,6 +67,8 @@
   function setBusy(busy) {
     els.submitBtn.disabled = busy;
     els.approveBtn.disabled = busy;
+    els.continuePlanBtn.disabled = busy;
+    els.listBriefsBtn.disabled = busy;
     els.input.readOnly = busy;
   }
 
@@ -91,31 +89,23 @@
 
   function resetStages() {
     hide(els.planSection);
+    hide(els.briefsSection);
     hide(els.progressSection);
     hide(els.errorSection);
     hide(els.reportSection);
     hide(els.errorSources);
-    hide(els.reportSources);
     els.errorSources.innerHTML = "";
-    els.reportSources.innerHTML = "";
     stopPolling();
     els.cancelBtn.hidden = true;
     els.generateBriefBtn.hidden = true;
     els.generateBriefBtn.disabled = false;
     els.analysisReadyMessage.hidden = true;
-    if (evaluationTimer) clearTimeout(evaluationTimer);
-    els.referenceInput.value = "";
-    els.evaluationResult.hidden = true;
-    els.evaluationResult.innerHTML = "";
-    els.evaluationProgress.hidden = true;
     currentCaseId = null;
+    viewingCaseId = null;
     hide(els.workspaceLinks);
     hide(els.qaPanel);
-    hide(els.qaAnswer);
-    hide(els.qaCitations);
     hide(els.qaStatus);
-    els.qaAnswer.textContent = "";
-    els.qaCitations.innerHTML = "";
+    els.qaThread.innerHTML = "";
   }
 
   function showError(message, sources) {
@@ -196,6 +186,29 @@
       .filter(Boolean);
   }
 
+  function splitTerms(text) {
+    return String(text || "")
+      .split(/[\n,，;；]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  function fillPlan(plan) {
+    renderQueryList(plan.tavily_queries || []);
+    els.planWeibo.value = plan.weibo_query || "";
+    els.planCore.value = (plan.newsnow_rss_core || []).join("\n");
+    els.planSupport.value = (plan.newsnow_rss_support || []).join("\n");
+  }
+
+  function collectPlan() {
+    return {
+      approved_tavily_queries: collectQueries(),
+      weibo_query: els.planWeibo.value.trim(),
+      newsnow_rss_core: splitTerms(els.planCore.value),
+      newsnow_rss_support: splitTerms(els.planSupport.value),
+    };
+  }
+
   function sourceItem(item) {
     const li = document.createElement("li");
     const name = document.createElement("span");
@@ -262,28 +275,40 @@
     show(container);
   }
 
-  async function updateWorkspaceLinks() {
+  function workspaceCaseId() {
+    return currentCaseId || viewingCaseId;
+  }
+
+  function workspaceHref(kind) {
+    const caseRef = workspaceCaseId();
+    return caseRef ? `/${kind}?case=${encodeURIComponent(caseRef)}` : `/${kind}`;
+  }
+
+  function updateWorkspaceLinks() {
     if (!els.workspaceLinks) return;
-    show(els.workspaceLinks);
-    let caseRef = "case1";
-    try {
-      const cases = await api("/api/v1/simulation/cases");
-      if (Array.isArray(cases) && cases.length) {
-        const matched = cases.find((item) => item.case_ref === "case1") || cases[0];
-        caseRef = matched.case_ref;
-      }
-    } catch (_) {
-      // Keep the default case1 links if the simulation runtime is unavailable.
+    const caseRef = workspaceCaseId();
+    if (!caseRef) {
+      hide(els.workspaceLinks);
+      return;
     }
-    const query = `?case=${encodeURIComponent(caseRef)}`;
-    document.querySelectorAll("[data-workspace='graph']").forEach((link) => {
-      link.href = `/assets/graph.html${query}`;
-    });
-    document.querySelectorAll("[data-workspace='simulation']").forEach((link) => {
-      link.href = `/assets/simulation.html${query}`;
+    document.querySelectorAll("[data-workspace]").forEach((link) => {
+      link.href = workspaceHref(link.dataset.workspace);
     });
     show(els.workspaceLinks);
   }
+
+  document.querySelectorAll("[data-workspace]").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      const caseRef = workspaceCaseId();
+      if (!caseRef) {
+        event.preventDefault();
+        showError("请先打开一份简报，再查看对应的知识图谱或推演。");
+        return;
+      }
+      event.preventDefault();
+      window.location.assign(workspaceHref(link.dataset.workspace));
+    });
+  });
 
   function setExportLinks(id, isCase = false) {
     const prefix = isCase ? `/api/v1/cases/${id}` : `/api/v1/runs/${id}`;
@@ -541,7 +566,6 @@
     latestMarkdown = markdown || "";
     els.reportTitle.textContent = topic || "简报";
     setExportLinks(id, isCase);
-    renderSources(els.reportSources, sources || []);
     els.reportBody.innerHTML = "";
     if (reportData && Object.keys(reportData).length) {
       els.reportBody.append(renderDashboard(reportData));
@@ -555,152 +579,183 @@
     els.cancelBtn.hidden = true;
     hide(els.errorSection);
     show(els.reportSection);
-    updateWorkspaceLinks();
     if (isCase) {
+      viewingCaseId = id;
+      currentCaseId = id;
       show(els.qaPanel);
     } else {
       hide(els.qaPanel);
     }
+    updateWorkspaceLinks();
     els.reportSection.scrollIntoView({ behavior: "smooth", block: "start" });
     setBusy(false);
   }
 
-  function renderQACitations(result) {
-    els.qaCitations.innerHTML = "";
-    const citations = Array.isArray(result.citations) ? result.citations : [];
-    const evidence = Array.isArray(result.evidence) ? result.evidence : [];
-    const evidenceBySource = new Map(evidence.map((item) => [item.source_id, item]));
-    citations.forEach((item) => {
-      if (!item.url) return;
-      const link = document.createElement("a");
-      link.href = item.url;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      const title = document.createElement("strong");
-      title.textContent = `${item.source_id}｜${item.title || "未命名来源"}`;
-      const meta = document.createElement("small");
-      const evidenceItem = evidenceBySource.get(item.source_id);
-      meta.textContent = [item.source_name, item.claim, evidenceItem?.quote]
-        .filter(Boolean)
-        .join(" · ");
-      link.append(title, meta);
-      els.qaCitations.append(link);
-    });
-    if (els.qaCitations.children.length) show(els.qaCitations);
-    else hide(els.qaCitations);
+  function toPlainReply(text) {
+    return String(text || "")
+      .replace(/!\[[^\]]*]\([^)]+\)/g, "")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(/https?:\/\/\S+/gi, "")
+      .replace(/^#{1,6}\s+/gm, "")
+      .replace(/\*\*([^*]+)\*\*/g, "$1")
+      .replace(/__([^_]+)__/g, "$1")
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/^\s*[-*•]\s+/gm, "")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
   }
 
-  async function askCaseQuestion() {
+  function assistantSessionId() {
+    const key = "caseAssistantSessionId";
+    let id = sessionStorage.getItem(key);
+    if (!id) {
+      id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
+      sessionStorage.setItem(key, id);
+    }
+    return id;
+  }
+
+  function appendQATurn(role, text) {
+    const turn = document.createElement("div");
+    turn.className = `qa-turn qa-${role}`;
+    const body = document.createElement("p");
+    body.textContent = role === "assistant" ? toPlainReply(text) : text;
+    turn.append(body);
+    els.qaThread.append(turn);
+    els.qaThread.scrollTop = els.qaThread.scrollHeight;
+    return turn;
+  }
+
+  async function askCaseQuestion(event) {
+    if (event) event.preventDefault();
     const question = els.qaQuestion.value.trim();
     if (!currentCaseId || question.length < 2) {
-      els.qaStatus.textContent = "请先输入问题，并确保当前已经打开一个案例报告。";
+      els.qaStatus.textContent = "请先输入问题，并确保当前已经打开一个案例。";
       show(els.qaStatus);
       return;
     }
     els.qaSubmit.disabled = true;
-    els.qaStatus.textContent = "正在检索当前案例并生成回答……";
+    els.qaStatus.textContent = "正在回复……";
     show(els.qaStatus);
-    hide(els.qaAnswer);
-    hide(els.qaCitations);
+    appendQATurn("user", question);
+    els.qaQuestion.value = "";
     try {
-      const result = await api(`/api/v1/cases/${currentCaseId}/chat`, {
+      const result = await api("/api/v1/assistant/chat", {
         method: "POST",
-        body: JSON.stringify({ question, mode: els.qaMode.value }),
+        body: JSON.stringify({
+          message: question,
+          session_id: assistantSessionId(),
+          case_id: currentCaseId,
+        }),
       });
-      els.qaAnswer.textContent = result.answer || "没有得到有效回答。";
-      show(els.qaAnswer);
-      renderQACitations(result);
-      els.qaStatus.textContent = `已完成｜${result.mode}｜使用 ${result.retrieved_count || 0} 组证据`;
+      if (result.session_id) {
+        sessionStorage.setItem("caseAssistantSessionId", result.session_id);
+      }
+      appendQATurn("assistant", result.answer || "没有得到有效回答。");
+      els.qaStatus.hidden = true;
+      await applyAssistantWorkspace(result);
     } catch (error) {
       els.qaStatus.textContent = error.message || String(error);
     } finally {
       els.qaSubmit.disabled = false;
+      els.qaQuestion.focus();
     }
+  }
+
+  async function applyAssistantWorkspace(result) {
+    const started = result && result.started_job;
+    if (started && started.run_id) {
+      if (started.case_id) currentCaseId = started.case_id;
+      currentRunId = started.run_id;
+      els.qaStatus.textContent = started.topic
+        ? `已开始生成「${started.topic}」，可随时问进度。完成后会在左侧打开。`
+        : "已开始生成新简报，可随时问进度。完成后会在左侧打开。";
+      show(els.qaStatus);
+      watchAssistantJob(started.run_id);
+    }
+    const openId = (result && result.open_case_id)
+      || (result && result.job && result.job.status === "completed" && result.job.case_id)
+      || "";
+    if (openId && openId !== viewingCaseId) {
+      await openCaseOnLeft(openId);
+    }
+  }
+
+  async function watchAssistantJob(runId) {
+    stopPolling();
+    const tick = async () => {
+      try {
+        const run = await api(`/api/v1/runs/${runId}`);
+        if (run.status === "completed") {
+          if (run.case_id) {
+            await openCaseOnLeft(run.case_id);
+          } else {
+            await openRunOnLeft(runId);
+          }
+          hide(els.qaStatus);
+          return;
+        }
+        if (run.status === "failed") {
+          els.qaStatus.textContent = run.error || "新简报生成失败";
+          show(els.qaStatus);
+          return;
+        }
+        if (run.status === "canceled") {
+          els.qaStatus.textContent = "新简报任务已终止";
+          show(els.qaStatus);
+          return;
+        }
+        pollTimer = setTimeout(tick, POLL_MS);
+      } catch (error) {
+        els.qaStatus.textContent = error.message || String(error);
+        show(els.qaStatus);
+      }
+    };
+    tick();
+  }
+
+  async function openCaseOnLeft(caseId) {
+    const researchCase = await api(`/api/v1/cases/${caseId}`);
+    currentCaseId = researchCase.case_id;
+    currentRunId = researchCase.child_run_ids?.[0] || currentRunId;
+    const data = researchCase.report_data || {};
+    if (researchCase.report || Object.keys(data).length) {
+      renderReport(
+        researchCase.report || "",
+        data,
+        researchCase.topic,
+        researchCase.case_id,
+        caseSources(researchCase),
+        true,
+      );
+      return;
+    }
+    const completed = (researchCase.child_runs || []).find((item) => item.status === "completed" && item.report);
+    if (completed) {
+      await openRunOnLeft(completed.run_id);
+    }
+  }
+
+  async function openRunOnLeft(runId) {
+    const run = await api(`/api/v1/runs/${runId}`);
+    const payload = run.report ? run : await api(`/api/v1/runs/${runId}/report`);
+    if (run.case_id) currentCaseId = run.case_id;
+    currentRunId = runId;
+    renderReport(
+      payload.report || "",
+      payload.report_data || run.report_data || {},
+      run.topic,
+      run.case_id || runId,
+      run.sources || [],
+      Boolean(run.case_id),
+    );
   }
 
   function setProviderQueries(queries) {
     const tavily = queries && queries.tavily;
     els.tavilyQueryInput.value = Array.isArray(tavily) ? tavily.join("\n") : (tavily || "");
     els.weiboQueryInput.value = (queries && queries.weibo) || "";
-  }
-
-  function renderEvaluation(summary) {
-    const rows = [
-      ["最终得分", summary.overall_score],
-      ["报告覆盖率", summary.report_coverage],
-      ["新闻材料覆盖率", summary.retrieval_coverage],
-      ["核心 rubric 报告覆盖", summary.core_report_coverage],
-      ["重要 rubric 报告覆盖", summary.important_report_coverage],
-    ];
-    els.evaluationResult.innerHTML = "";
-    rows.forEach(([label, value]) => {
-      const row = document.createElement("div");
-      row.className = "evaluation-row";
-      const name = document.createElement("span");
-      name.textContent = label;
-      const score = document.createElement("strong");
-      score.textContent = value ?? "-";
-      row.append(name, score);
-      els.evaluationResult.append(row);
-    });
-
-    const hits = Array.isArray(summary.reference_hits) ? summary.reference_hits : [];
-    const hitSection = document.createElement("section");
-    hitSection.className = "reference-hits";
-    const hitTitle = document.createElement("h4");
-    const total = Number.isInteger(summary.reference_total_count)
-      ? summary.reference_total_count
-      : hits.length;
-    hitTitle.textContent = `Reference 命中要点（${hits.length}/${total}）`;
-    hitSection.append(hitTitle);
-
-    if (!hits.length) {
-      const empty = document.createElement("p");
-      empty.className = "stage-meta";
-      empty.textContent = "最终报告暂未命中 Reference 中的有效信息点。";
-      hitSection.append(empty);
-    } else {
-      const importanceLabels = { core: "核心", important: "重要", bonus: "补充" };
-      const list = document.createElement("ol");
-      hits.forEach((item) => {
-        const li = document.createElement("li");
-        const point = document.createElement("span");
-        point.textContent = item.criterion || item.rubric_id || "未命名信息点";
-        const meta = document.createElement("small");
-        const importance = importanceLabels[item.importance] || item.importance || "未分类";
-        const coverage = item.report_score === 1 ? "完整命中" : "部分命中";
-        meta.textContent = `${importance} · ${coverage}`;
-        li.append(point, meta);
-        list.append(li);
-      });
-      hitSection.append(list);
-    }
-    els.evaluationResult.append(hitSection);
-    els.evaluationResult.hidden = false;
-  }
-
-  async function pollEvaluation(runId) {
-    try {
-      const evaluation = await api(`/api/v1/runs/${runId}/evaluation`);
-      if (evaluation.status === "completed") {
-        els.evaluationProgress.hidden = true;
-        renderEvaluation(evaluation.summary || {});
-        els.evaluateBtn.disabled = false;
-        return;
-      }
-      if (evaluation.status === "failed") {
-        els.evaluationProgress.textContent = `评测失败：${evaluation.error || "未知错误"}`;
-        els.evaluateBtn.disabled = false;
-        return;
-      }
-      els.evaluationProgress.textContent = "正在生成 rubric 并评测……";
-      els.evaluationProgress.hidden = false;
-      evaluationTimer = setTimeout(() => pollEvaluation(runId), POLL_MS);
-    } catch (error) {
-      els.evaluationProgress.textContent = error.message || String(error);
-      els.evaluationProgress.hidden = false;
-      els.evaluateBtn.disabled = false;
-    }
   }
 
   async function pollRun(runId) {
@@ -711,7 +766,15 @@
       if (run.status === "completed") {
         const payload = run.report ? run : await api(`/api/v1/runs/${runId}/report`);
         const report = payload.report || "";
-        renderReport(report, payload.report_data || run.report_data || {}, run.topic, runId, run.sources || []);
+        if (run.case_id) currentCaseId = run.case_id;
+        renderReport(
+          report,
+          payload.report_data || run.report_data || {},
+          run.topic,
+          run.case_id || runId,
+          run.sources || [],
+          Boolean(run.case_id),
+        );
         setProviderQueries({
           tavily: run.tavily_queries || [],
           weibo: run.weibo_query || "",
@@ -845,39 +908,117 @@
     });
   }
 
-  async function lookupExistingCases(query) {
-    const result = await api("/api/v1/cases/lookup", {
+  async function approvePlan(runId, plan) {
+    return api(`/api/v1/plans/${runId}/approve`, {
       method: "POST",
-      body: JSON.stringify({ query }),
+      body: JSON.stringify(plan),
     });
-    return Array.isArray(result.matches) ? result.matches : [];
   }
 
-  function chooseExistingCase(matches) {
-    const candidates = matches.filter((item) => item.can_reuse);
-    if (!candidates.length) return null;
-    const lines = candidates.slice(0, 8).map((item, index) => {
-      const type = item.match_type === "exact" ? "精确匹配" : "关键词匹配";
-      const terms = item.matched_terms?.length
-        ? `；命中：${item.matched_terms.join("、")}`
-        : "";
-      const updated = item.updated_at
-        ? new Date(item.updated_at).toLocaleString()
-        : "未知时间";
-      return `${index + 1}. ${item.case_key}｜${item.topic}｜${type}` +
-        `｜${item.prepared_insight_count} 条结果｜${updated}${terms}`;
-    });
-    const answer = window.prompt(
-      "发现可能已有案例，请选择要复用的案例：\n\n" +
-      lines.join("\n") +
-      "\n\n输入编号直接查看/生成报告；取消则重新搜索。",
-      "1",
-    );
-    const index = Number.parseInt(answer || "", 10) - 1;
-    return Number.isInteger(index) && index >= 0 && index < candidates.length
-      ? candidates[index]
-      : null;
+  async function submitReviewedPlan() {
+    if (!currentRunId) {
+      showError("缺少任务 ID，请重新提交问题");
+      return;
+    }
+    const plan = collectPlan();
+    if (!plan.approved_tavily_queries.length) {
+      showError("请填写 Tavily Query");
+      return;
+    }
+    setBusy(true);
+    try {
+      await approvePlan(currentRunId, plan);
+      await startRunning(currentRunId);
+    } catch (error) {
+      showError(error.message || String(error));
+    }
   }
+
+  function renderBriefList(items) {
+    els.briefsList.innerHTML = "";
+    if (!items.length) {
+      const empty = document.createElement("li");
+      empty.className = "briefs-empty";
+      empty.textContent = "还没有已完成的简报。";
+      els.briefsList.append(empty);
+      return;
+    }
+    items.forEach((item) => {
+      const li = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "brief-item";
+      const title = document.createElement("strong");
+      title.textContent = item.topic || item.query || "未命名简报";
+      const meta = document.createElement("span");
+      meta.textContent = item.updated_at
+        ? new Date(item.updated_at).toLocaleString()
+        : "";
+      button.append(title, meta);
+      button.addEventListener("click", async () => {
+        setBusy(true);
+        try {
+          hide(els.briefsSection);
+          await openExistingCase(item);
+        } catch (error) {
+          showError(error.message || String(error));
+        } finally {
+          setBusy(false);
+        }
+      });
+      li.append(button);
+      els.briefsList.append(li);
+    });
+  }
+
+  els.listBriefsBtn.addEventListener("click", async () => {
+    els.listBriefsBtn.disabled = true;
+    try {
+      const result = await api("/api/v1/cases");
+      renderBriefList(Array.isArray(result.cases) ? result.cases : []);
+      show(els.briefsSection);
+      els.briefsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (error) {
+      showError(error.message || String(error));
+    } finally {
+      els.listBriefsBtn.disabled = false;
+    }
+  });
+
+  els.form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const query = els.input.value.trim();
+    if (query.length < 2) {
+      showError("请输入至少两个字符的问题");
+      return;
+    }
+
+    resetStages();
+    setBusy(true);
+    els.progressText.textContent = "正在生成检索计划…";
+    show(els.progressSection);
+
+    try {
+      const plan = await createPlan(query);
+      currentRunId = plan.run_id;
+      currentCaseId = plan.case_id || null;
+      hide(els.progressSection);
+      fillPlan(plan);
+      show(els.planSection);
+      els.planSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      setBusy(false);
+    } catch (error) {
+      showError(error.message || String(error));
+    }
+  });
+
+  els.approveBtn.addEventListener("click", submitReviewedPlan);
+  els.continuePlanBtn.addEventListener("click", submitReviewedPlan);
+  els.cancelPlanBtn.addEventListener("click", () => {
+    hide(els.planSection);
+    setBusy(false);
+    els.input.focus();
+  });
 
   async function openExistingCase(match) {
     const researchCase = await api(`/api/v1/cases/${match.case_id}`);
@@ -908,85 +1049,6 @@
     });
     await startCaseRunning(researchCase.case_id);
   }
-
-  async function approvePlan(runId, queries) {
-    return api(`/api/v1/plans/${runId}/approve`, {
-      method: "POST",
-        body: JSON.stringify({ approved_tavily_queries: queries }),
-    });
-  }
-
-  els.toggleAdvanced.addEventListener("click", () => {
-    const open = els.advancedPanel.hidden;
-    els.advancedPanel.hidden = !open;
-    els.toggleAdvanced.setAttribute("aria-expanded", open ? "true" : "false");
-    els.toggleAdvanced.textContent = open
-      ? "收起高级选项"
-      : "高级：审核检索词";
-  });
-
-  els.addQuery.addEventListener("click", () => {
-    renderQueryList([...collectQueries(), ""]);
-    const inputs = els.queryList.querySelectorAll("input");
-    inputs[inputs.length - 1]?.focus();
-  });
-
-  els.form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const query = els.input.value.trim();
-    if (query.length < 2) {
-      showError("请输入至少两个字符的问题");
-      return;
-    }
-
-    resetStages();
-    setBusy(true);
-    els.progressText.textContent = "正在生成检索计划…";
-    show(els.progressSection);
-
-    try {
-      const matches = await lookupExistingCases(query);
-      const reusable = chooseExistingCase(matches);
-      if (reusable) {
-        await openExistingCase(reusable);
-        return;
-      }
-      const plan = await createPlan(query);
-      currentRunId = plan.run_id;
-      currentCaseId = plan.case_id || null;
-
-      if (els.requireReview.checked) {
-        hide(els.progressSection);
-        els.planTopic.textContent = plan.topic || plan.query;
-        renderQueryList(plan.tavily_queries || []);
-        show(els.planSection);
-        els.planSection.scrollIntoView({ behavior: "smooth", block: "start" });
-        setBusy(false);
-        return;
-      }
-
-      const queries = (plan.tavily_queries || []).filter(Boolean);
-      await approvePlan(plan.run_id, queries);
-      await startRunning(plan.run_id);
-    } catch (error) {
-      showError(error.message || String(error));
-    }
-  });
-
-  els.approveBtn.addEventListener("click", async () => {
-    const queries = collectQueries();
-    if (!currentRunId) {
-      showError("缺少任务 ID，请重新提交问题");
-      return;
-    }
-    setBusy(true);
-    try {
-      await approvePlan(currentRunId, queries);
-      await startRunning(currentRunId);
-    } catch (error) {
-      showError(error.message || String(error));
-    }
-  });
 
   els.cancelBtn.addEventListener("click", cancelRun);
 
@@ -1050,34 +1112,11 @@
     }
   });
 
-  els.qaSubmit.addEventListener("click", askCaseQuestion);
+  els.qaComposer.addEventListener("submit", askCaseQuestion);
   els.qaQuestion.addEventListener("keydown", (event) => {
-    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+    if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      askCaseQuestion();
-    }
-  });
-
-  els.evaluateBtn.addEventListener("click", async () => {
-    const reference = els.referenceInput.value.trim();
-    if (!currentRunId || reference.length < 2) {
-      els.evaluationProgress.textContent = "请先粘贴 reference";
-      els.evaluationProgress.hidden = false;
-      return;
-    }
-    els.evaluateBtn.disabled = true;
-    els.evaluationProgress.textContent = "正在提交评测……";
-    els.evaluationProgress.hidden = false;
-    els.evaluationResult.hidden = true;
-    try {
-      await api(`/api/v1/runs/${currentRunId}/evaluate`, {
-        method: "POST",
-        body: JSON.stringify({ reference }),
-      });
-      await pollEvaluation(currentRunId);
-    } catch (error) {
-      els.evaluationProgress.textContent = error.message || String(error);
-      els.evaluateBtn.disabled = false;
+      askCaseQuestion(event);
     }
   });
 

@@ -10,11 +10,12 @@ import re
 import unicodedata
 from urllib.parse import urlparse
 
-from sqlalchemy import create_engine, func, or_, select, update
+from sqlalchemy import create_engine, delete, event as sa_event, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
+from pgvector.psycopg import register_vector
 
-from .knowledge.models import Document, Event, EventDocument, new_id
+from .knowledge.models import Document, Event, EventDocument, KnowledgeChunk, new_id
 from .utils.dedup import canonical_url
 
 
@@ -110,6 +111,11 @@ class RunRepository:
             database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
         self.database_url = database_url
         self.engine = create_engine(database_url, pool_pre_ping=True)
+
+        @sa_event.listens_for(self.engine, "connect")
+        def _register_vector(dbapi_connection, _connection_record) -> None:
+            register_vector(dbapi_connection)
+
         self._sessions = sessionmaker(self.engine, expire_on_commit=False)
 
     @staticmethod
@@ -513,18 +519,39 @@ class RunRepository:
                 event.metadata_json = metadata
                 event.updated_at = datetime.now(timezone.utc)
 
-    def approve(self, run_id: str, approved_tavily_queries: list[str]) -> bool:
+    def approve(
+        self,
+        run_id: str,
+        approved_tavily_queries: list[str],
+        *,
+        newsnow_rss_core: list[str] | None = None,
+        newsnow_rss_support: list[str] | None = None,
+        weibo_query: str | None = None,
+    ) -> bool:
         now = datetime.now(timezone.utc)
         with self._sessions.begin() as session:
             event = self._get_event(session, run_id)
             if event is None or event.status != "waiting_for_review":
                 return False
             plan = dict(event.search_plan or {})
+            queries = list(approved_tavily_queries or [])
+            if queries:
+                plan["tavily_queries"] = queries
             plan.update({
-                "approved_tavily_queries": approved_tavily_queries,
+                "approved_tavily_queries": queries or list(plan.get("tavily_queries") or []),
                 "review_status": "approved",
                 "reviewed_at": now.isoformat(),
             })
+            if newsnow_rss_core is not None:
+                plan["newsnow_rss_core"] = [
+                    " ".join(term.split()) for term in newsnow_rss_core if str(term).strip()
+                ]
+            if newsnow_rss_support is not None:
+                plan["newsnow_rss_support"] = [
+                    " ".join(term.split()) for term in newsnow_rss_support if str(term).strip()
+                ]
+            if weibo_query is not None:
+                plan["weibo_query"] = " ".join(weibo_query.split())
             event.search_plan = plan
             event.status = "running"
             event.progress = "已批准，等待后台执行"
@@ -1161,3 +1188,137 @@ class RunRepository:
                 )
             )
             return int(result.rowcount or 0)
+
+    def resolve_case_id(self, event_id: str) -> str | None:
+        with self._sessions() as session:
+            event = session.get(Event, event_id)
+            if event is None:
+                return None
+            if event.event_type == "case":
+                return event.id
+            return event.parent_event_id
+
+    def list_case_ids(self) -> list[str]:
+        with self._sessions() as session:
+            return list(session.scalars(
+                select(Event.id).where(Event.event_type == "case").order_by(Event.updated_at.desc())
+            ))
+
+    def list_brief_cases(self, limit: int = 50) -> list[CaseRecord]:
+        with self._sessions() as session:
+            parents = session.scalars(
+                select(Event)
+                .where(Event.event_type == "case")
+                .order_by(Event.updated_at.desc(), Event.id)
+                .limit(max(1, limit) * 2)
+            ).all()
+        cases = []
+        for parent in parents:
+            if not (parent.report_markdown or parent.report_data):
+                continue
+            cases.append(CaseRecord(
+                case_id=parent.id,
+                case_key=str(parent.case_key or parent.id),
+                query=parent.question,
+                topic=parent.title,
+                status=parent.status,
+                progress=parent.progress,
+                report=parent.report_markdown,
+                report_data=dict(parent.report_data or {}),
+                error=parent.error_message,
+                metadata=dict(parent.metadata_json or {}),
+                updated_at=parent.updated_at,
+            ))
+            if len(cases) >= limit:
+                break
+        return cases
+
+    def list_knowledge_chunks(self, case_id: str) -> list[dict]:
+        with self._sessions() as session:
+            rows = session.scalars(
+                select(KnowledgeChunk).where(KnowledgeChunk.case_id == case_id)
+            ).all()
+        return [self._chunk_row(row) for row in rows]
+
+    def replace_knowledge_chunks(
+        self,
+        case_id: str,
+        records: list[dict],
+        *,
+        source_types: list[str] | None = None,
+        source_id: str | None = None,
+    ) -> None:
+        now = datetime.now(timezone.utc)
+        with self._sessions.begin() as session:
+            stmt = delete(KnowledgeChunk).where(KnowledgeChunk.case_id == case_id)
+            if source_types:
+                stmt = stmt.where(KnowledgeChunk.source_type.in_(list(source_types)))
+            if source_id:
+                stmt = stmt.where(KnowledgeChunk.source_id == source_id)
+            session.execute(stmt)
+            for record in records:
+                if not record.get("content") or not record.get("embedding"):
+                    continue
+                session.add(KnowledgeChunk(
+                    id=new_id(),
+                    case_id=case_id,
+                    document_id=record.get("document_id"),
+                    source_id=str(record["source_id"]),
+                    source_type=str(record["source_type"]),
+                    title=str(record.get("title") or ""),
+                    url=str(record.get("url") or ""),
+                    published_at=record.get("published_at"),
+                    content=str(record["content"]),
+                    chunk_index=int(record.get("chunk_index") or 0),
+                    content_hash=str(record["content_hash"]),
+                    embedding=list(record["embedding"]),
+                    embedding_model=str(record.get("embedding_model") or ""),
+                    created_at=now,
+                    updated_at=now,
+                ))
+
+    def search_knowledge_chunks(
+        self,
+        query_vector: list[float],
+        *,
+        case_id: str | None = None,
+        exclude_case_id: str | None = None,
+        source_types: list[str] | None = None,
+        top_k: int = 30,
+    ) -> list[dict]:
+        distance = KnowledgeChunk.embedding.cosine_distance(list(query_vector))
+        stmt = select(KnowledgeChunk, (1 - distance).label("similarity")).order_by(distance)
+        if case_id:
+            stmt = stmt.where(KnowledgeChunk.case_id == case_id)
+        if exclude_case_id:
+            stmt = stmt.where(KnowledgeChunk.case_id != exclude_case_id)
+        if source_types:
+            stmt = stmt.where(KnowledgeChunk.source_type.in_(list(source_types)))
+        stmt = stmt.limit(max(1, int(top_k)))
+        with self._sessions() as session:
+            rows = session.execute(stmt).all()
+        result = []
+        for row, similarity in rows:
+            item = self._chunk_row(row)
+            item["similarity_score"] = float(similarity or 0)
+            result.append(item)
+        return result
+
+    @staticmethod
+    def _chunk_row(row: KnowledgeChunk) -> dict:
+        published = row.published_at.isoformat() if row.published_at else None
+        return {
+            "chunk_id": row.id,
+            "case_id": row.case_id,
+            "document_id": row.document_id,
+            "source_id": row.source_id,
+            "source_type": row.source_type,
+            "title": row.title,
+            "url": row.url,
+            "published_at": published,
+            "content": row.content,
+            "chunk_index": row.chunk_index,
+            "content_hash": row.content_hash,
+            "embedding": list(row.embedding) if row.embedding is not None else None,
+            "embedding_model": row.embedding_model,
+        }

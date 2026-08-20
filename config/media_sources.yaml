@@ -256,7 +256,7 @@ tavily:
 
 # 微博桌面搜索；Cookie 只通过项目外部文件提供，禁止写入本配置。
 weibo:
-  enabled: false
+  enabled: true
   cookie_file: "${WEIBO_COOKIE_FILE}"
   search_url: "https://s.weibo.com/weibo"
   comments_url: "https://weibo.com/ajax/statuses/buildComments"

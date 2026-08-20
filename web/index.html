@@ -2,12 +2,13 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
+  <meta http-equiv="Cache-Control" content="no-store">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Financial Single Agent｜金融简报</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/styles.css">
+  <link rel="stylesheet" href="/assets/styles.css?v=20260819-casebind">
 </head>
 <body>
   <div class="atmosphere" aria-hidden="true"></div>
@@ -38,19 +39,15 @@
           <button type="submit" id="submit-btn" class="btn-primary">
             <span class="btn-label">生成简报</span>
           </button>
-          <button type="button" id="toggle-advanced" class="btn-ghost" aria-expanded="false">
-          高级：审核 Tavily Query
-          </button>
+          <button type="button" id="list-briefs-btn" class="btn-ghost">查看已有简报</button>
         </div>
       </form>
 
-      <div id="advanced-panel" class="advanced-panel" hidden>
-        <p class="panel-hint">开启后，会先生成计划供你审核 Tavily Query，再开始聚合。</p>
-        <label class="check-row">
-          <input type="checkbox" id="require-review">
-          <span>生成计划后暂停，等待我确认 Tavily Query</span>
-        </label>
-      </div>
+      <section id="briefs-section" class="stage" hidden>
+        <h2>已有简报</h2>
+        <p class="stage-meta">点击标题即可打开。</p>
+        <ul id="briefs-list" class="briefs-list"></ul>
+      </section>
       <fieldset class="source-options">
         <legend>数据源（NewsNow + RSS + Tavily）</legend>
         <label class="check-row"><input type="checkbox" data-source="newsnow" checked><span>NewsNow</span></label>
@@ -61,12 +58,20 @@
     </section>
 
     <section id="plan-section" class="stage" hidden>
-      <h2>检索计划</h2>
-      <p class="stage-meta">主题：<strong id="plan-topic"></strong></p>
+      <h2>确认检索词</h2>
+      <p class="stage-meta">可修改后再开始。Tavily / 微博用于搜索，Core / Support 用于 NewsNow 和 RSS 预筛。</p>
+      <label class="plan-label" for="query-list">Tavily Query</label>
       <ul id="query-list" class="query-list"></ul>
+      <label class="plan-label" for="plan-weibo">微博 Query</label>
+      <input id="plan-weibo" type="text" maxlength="200" placeholder="微博检索短句">
+      <label class="plan-label" for="plan-core">Core（NewsNow / RSS）</label>
+      <textarea id="plan-core" rows="2" placeholder="每行一个核心词"></textarea>
+      <label class="plan-label" for="plan-support">Support（NewsNow / RSS）</label>
+      <textarea id="plan-support" rows="3" placeholder="每行一个辅助词"></textarea>
       <div class="actions">
-        <button type="button" id="add-query" class="btn-ghost">添加 Tavily Query</button>
-        <button type="button" id="approve-btn" class="btn-primary">批准并开始</button>
+        <button type="button" id="approve-btn" class="btn-primary">确认并开始</button>
+        <button type="button" id="continue-plan-btn" class="btn-ghost">继续</button>
+        <button type="button" id="cancel-plan-btn" class="btn-ghost">取消</button>
       </div>
     </section>
 
@@ -95,73 +100,68 @@
           <a id="download-md" class="btn-ghost" href="#" download>导出 MD</a>
           <a id="export-pdf" class="btn-ghost" href="#" target="_blank" rel="noopener">导出 PDF</a>
           <a id="view-html" class="btn-ghost" href="#" target="_blank" rel="noopener">打开排版页</a>
-          <a data-workspace="graph" class="btn-ghost" href="/assets/graph.html?case=case1">知识图谱</a>
-          <a data-workspace="simulation" class="btn-primary" href="/assets/simulation.html?case=case1">开始舆情推演</a>
           <button type="button" id="new-btn" class="btn-primary">新问题</button>
         </div>
       </div>
       <p id="analysis-ready-message" class="stage-meta" hidden></p>
       <nav id="workspace-links" class="workspace-links" hidden>
         <div class="workspace-copy">
-          <h3>舆情推演</h3>
-          <p class="stage-meta">简报完成后，在独立页面查看 Zep 真实图谱，并启动多 Agent 模拟。</p>
+          <h3>本简报的知识图谱与舆情推演</h3>
+          <p class="stage-meta">只处理当前打开的这份简报。没有图谱时先生成；不会再跳到外汇期货案例。</p>
         </div>
-        <a id="open-graph" data-workspace="graph" class="btn-ghost" href="/assets/graph.html?case=case1">查看知识图谱</a>
-        <a id="open-simulation" data-workspace="simulation" class="btn-primary" href="/assets/simulation.html?case=case1">开始舆情推演</a>
+        <a id="open-graph" data-workspace="graph" class="btn-ghost" href="/graph">本简报知识图谱</a>
+        <a id="open-simulation" data-workspace="simulation" class="btn-primary" href="/simulation">本简报舆情推演</a>
       </nav>
-      <div id="report-sources" class="source-panel" hidden></div>
-      <details id="provider-query-panel" class="provider-query-panel">
-        <summary>追加数据源</summary>
-        <p class="stage-meta">追加结果继续写入当前 case/run_id，并自动按 URL 合并。</p>
-        <div class="append-source-options">
-          <label class="check-row"><input type="checkbox" data-append-source="newsnow"><span>NewsNow</span></label>
-          <label class="check-row"><input type="checkbox" data-append-source="rss"><span>RSS</span></label>
-          <label class="check-row"><input type="checkbox" data-append-source="tavily"><span>Tavily</span></label>
-          <label class="check-row"><input type="checkbox" data-append-source="weibo"><span>微博</span></label>
+      <div class="workspace-split">
+        <div class="workspace-main">
+          <details id="provider-query-panel" class="provider-query-panel">
+            <summary>追加数据源</summary>
+            <p class="stage-meta">追加结果继续写入当前 case/run_id，并自动按 URL 合并。</p>
+            <div class="append-source-options">
+              <label class="check-row"><input type="checkbox" data-append-source="newsnow"><span>NewsNow</span></label>
+              <label class="check-row"><input type="checkbox" data-append-source="rss"><span>RSS</span></label>
+              <label class="check-row"><input type="checkbox" data-append-source="tavily"><span>Tavily</span></label>
+              <label class="check-row"><input type="checkbox" data-append-source="weibo"><span>微博</span></label>
+            </div>
+            <label for="tavily-query-input">Tavily Query（每次仅一条）</label>
+            <textarea id="tavily-query-input" rows="3"></textarea>
+            <label for="weibo-query-input">微博 Query（由 Query Planner 生成）</label>
+            <input id="weibo-query-input" type="text" readonly>
+            <button type="button" id="rerun-query-btn" class="btn-primary">抓取并分析，暂不生成简报</button>
+          </details>
+          <article id="report-body" class="report-body"></article>
         </div>
-        <label for="tavily-query-input">Tavily Query（每次仅一条）</label>
-        <textarea id="tavily-query-input" rows="3"></textarea>
-        <label for="weibo-query-input">微博 Query（由 Query Planner 生成）</label>
-        <input id="weibo-query-input" type="text" readonly>
-        <button type="button" id="rerun-query-btn" class="btn-primary">抓取并分析，暂不生成简报</button>
-      </details>
-      <article id="report-body" class="report-body"></article>
 
-      <section id="qa-panel" class="qa-panel" hidden>
-        <div class="qa-heading">
-          <div>
-            <h3>案例问答</h3>
-            <p class="stage-meta">只检索当前案例。请选择思考模式，再针对简报、结构化分析或原文提问。</p>
-          </div>
-        </div>
-        <div class="qa-controls">
-          <label for="qa-mode">思考模式</label>
-          <select id="qa-mode">
-            <option value="fast">快速｜根据简报</option>
-            <option value="analysis">分析｜根据结构化分析</option>
-            <option value="deep">深度｜检索原文并核对出处</option>
-          </select>
-          <textarea id="qa-question" rows="2" maxlength="5000" placeholder="例如：吴清有哪些发言？"></textarea>
-          <button type="button" id="qa-submit" class="btn-primary">提交问题</button>
-        </div>
-        <p id="qa-status" class="progress-text" hidden></p>
-        <div id="qa-answer" class="qa-answer" hidden></div>
-        <div id="qa-citations" class="qa-citations" hidden></div>
-      </section>
-
-      <section id="evaluation-panel" class="evaluation-panel">
-        <h3>报告评测</h3>
-        <p class="stage-meta">粘贴 reference，系统将按 rubric 评估新闻材料覆盖和报告覆盖。</p>
-        <textarea id="reference-input" rows="8" maxlength="100000" placeholder="粘贴 reference 报告"></textarea>
-        <button type="button" id="evaluate-btn" class="btn-primary">开始评测</button>
-        <p id="evaluation-progress" class="progress-text" hidden></p>
-        <div id="evaluation-result" class="evaluation-result" hidden></div>
-      </section>
+        <aside id="qa-panel" class="qa-panel" hidden>
+          <header class="qa-heading">
+            <h3>案例助手</h3>
+            <p class="stage-meta">直接提问即可。简报类问题会先问你要简洁版、分析版还是深度搜索。</p>
+          </header>
+          <div id="qa-thread" class="qa-thread"></div>
+          <p id="qa-status" class="qa-status" hidden></p>
+          <form id="qa-composer" class="qa-composer">
+            <textarea id="qa-question" rows="1" maxlength="5000" placeholder="继续提问……"></textarea>
+            <button type="submit" id="qa-submit" class="btn-primary">发送</button>
+          </form>
+        </aside>
+      </div>
     </section>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
-  <script src="/assets/app.js"></script>
+  <script>
+    document.addEventListener("click", (event) => {
+      const link = event.target.closest && event.target.closest("[data-workspace]");
+      if (!link) return;
+      const row = document.cookie.split("; ").find((item) => item.startsWith("ma_open_case="));
+      const caseId = row ? decodeURIComponent(row.slice("ma_open_case=".length)) : "";
+      if (!caseId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      window.location.assign(`/${link.dataset.workspace}?case=${encodeURIComponent(caseId)}`);
+    }, true);
+  </script>
+  <script src="/assets/app.js?v=20260819-workspace"></script>
 </body>
 </html>

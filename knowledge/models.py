@@ -1,13 +1,17 @@
-"""PostgreSQL models for the three-table event/news store."""
+"""PostgreSQL models for the event/news store and RAG chunks."""
 
 from __future__ import annotations
 
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, String, Text, UniqueConstraint, func
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+# qwen3.7-text-embedding default; changing this requires a new migration.
+EMBEDDING_DIMENSION = 1024
 
 
 def new_id() -> str:
@@ -105,6 +109,43 @@ class EventDocument(Base):
         String(36), ForeignKey("event_documents.id", ondelete="SET NULL"), nullable=True
     )
     metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class KnowledgeChunk(Base):
+    __tablename__ = "knowledge_chunks"
+    __table_args__ = (
+        UniqueConstraint(
+            "case_id",
+            "source_type",
+            "source_id",
+            "chunk_index",
+            name="uq_knowledge_chunks_source_chunk",
+        ),
+        Index("ix_knowledge_chunks_case_id", "case_id"),
+        Index("ix_knowledge_chunks_case_source_type", "case_id", "source_type"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    case_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("events.id", ondelete="CASCADE"), nullable=False
+    )
+    document_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("documents.id", ondelete="SET NULL"), nullable=True
+    )
+    source_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    url: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    chunk_index: Mapped[int] = mapped_column(nullable=False, default=0)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    embedding: Mapped[list] = mapped_column(Vector(EMBEDDING_DIMENSION), nullable=False)
+    embedding_model: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

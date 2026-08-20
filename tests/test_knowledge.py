@@ -2,15 +2,15 @@ import unittest
 
 from sqlalchemy.dialects.postgresql import JSONB
 
-from My_agent.knowledge.models import Base, Document, Event, EventDocument
+from My_agent.knowledge.models import Base, Document, Event, EventDocument, KnowledgeChunk
 from My_agent.run_repository import RunRepository
 
 
 class PostgreSQLStorageTests(unittest.TestCase):
-    def test_only_three_storage_tables_exist(self):
+    def test_storage_tables_include_knowledge_chunks(self):
         self.assertEqual(
             set(Base.metadata.tables),
-            {"events", "documents", "event_documents"},
+            {"events", "documents", "event_documents", "knowledge_chunks"},
         )
 
     def test_json_fields_are_postgresql_jsonb(self):

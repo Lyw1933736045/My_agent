@@ -14,7 +14,7 @@
 - 内容整理与结构化抽取
 - 阶段性跟踪（Case 复用、追加来源、补充检索）
 - 舆情简报生成（带来源引用）
-- 质量评测（LLM-as-a-Judge + Atomic Rubric）
+- 质量评测（离线覆盖评测脚本，不进入前端）
 
 **不做的事：** 不接实时行情、不接结构化财务数据库；结果仅基于公开资料，不构成投资建议。
 
@@ -24,8 +24,8 @@
 
 ### 2.1 接口层
 
-- **FastAPI + Pydantic** 封装任务创建、Query 审核、运行状态查询、报告获取、评测触发等能力，将前端交互与 Agent Workflow 解耦。
-- **原生 HTML / CSS / JavaScript** 前端，通过 `fetch` 调用 API，支持数据源选择、Query 审核、任务进度轮询、Markdown / HTML Dashboard 报告查看、案例问答与评测结果展示。
+- **FastAPI + Pydantic** 封装任务创建、Query 审核、运行状态查询、报告获取等能力，将前端交互与 Agent Workflow 解耦。
+- **原生 HTML / CSS / JavaScript** 前端，通过 `fetch` 调用 API，支持数据源选择、Query 审核、任务进度轮询、Markdown / HTML Dashboard 报告查看与案例问答。评测不在前端展示，由后端离线脚本完成。
 - 采用 **`run_id` + `case_id`** 管理长任务生命周期；支持 **Human-in-the-loop**：用户可确认或修改 Tavily Query 后再执行检索。
 
 **核心 API 流程：**
@@ -36,7 +36,6 @@ POST /api/v1/plans/{run_id}/approve         → 批准 Query，后台执行
 GET  /api/v1/runs/{run_id}                  → 轮询进度与状态
 GET  /api/v1/runs/{run_id}/report           → 获取 Markdown + brief_data
 GET  /api/v1/runs/{run_id}/report/view      → HTML Dashboard
-POST /api/v1/runs/{run_id}/evaluate         → 触发 LLM-as-a-Judge 评测
 ```
 
 **扩展能力（增量检索 / 断点恢复）：**
@@ -252,60 +251,45 @@ render_brief_markdown() 固定模板渲染
 
 ---
 
-## 6. Rubric & LLM-as-a-Judge
+## 6. 离线简报覆盖评测
 
-### 6.1 为什么需要 Rubric
+评测是**后端开发工作**，不接入 FastAPI、不在前端展示、不写入业务库。
 
-开放式研究报告不存在唯一标准答案。Rubric 将「好不好」拆成多个**明确、可检查、可解释**的原子检查项：
+### 6.1 评什么
 
-- **LLM-as-a-Judge** 解决「谁来评」
-- **Rubric** 解决「按什么标准评」
+用导师金标 `reference.md` 对照库里已生成简报的 `report_data`。写简报仍用 `deepseek-chat`；打分用 `deepseek-v4-flash`。
 
-### 6.2 Rubric 构建
+入口：
 
-1. 将人工参考报告（`reference.md`）拆分为 **Atomic Rubric**。
-2. 每条包含：`criterion`（检查项）、`reference_evidence`、`importance`（`core` / `important` / `bonus`）。
-3. 通过 `evaluation/rubric_builder.py` 生成固定 `rubrics.json`。
-
-### 6.3 评测流程
-
-```text
-reference.md → build rubrics
-    ↓
-Agent 运行后保存 retrieved_documents.json + report.md
-    ↓
-Judge 逐条 Rubric 评分（retrieval + report 双维度）
-    ↓
-证据校验 → 汇总 metrics → result.json
+```bash
+python3 scripts/eval_reference_coverage.py --case-key case1
 ```
 
-**评分档位：** `1.0` 完整覆盖 / `0.5` 部分覆盖 / `0.0` 未覆盖
-
-**证据校验（`evaluation/judge.py`）：**
-
-- 非零评分必须返回 `evidence` + `source_url`
-- `source_url` 必须存在于本次检索材料中，否则降为 0
-- 评分不在 0/0.5/1 范围时自动重试 1 次
-- 每篇检索文档最多截取 **1,800 字符** 提交 Judge（控制 Token 成本）
-
-**综合得分（`evaluation/metrics.py`）：**
+### 6.2 流程
 
 ```text
-overall_base = (0.60 × core_report_coverage + 0.25 × important_report_coverage) / 0.85
-bonus_points = min(5.0, Σ bonus 项加分)   # 完整 +0.5，部分 +0.25
-overall_score = min(100, overall_base + bonus_points)
+reference.md 按金标结构切段（境内总览 / 一是…五是 / 境外 / 自媒体等）
+    ↓
+简报 report_data 按字段展开为可检索单元
+（摘要、官方、境内外媒体、舆情、时间线、指标、综合研判）
+    ↓
+Qwen embedding 余弦召回每段简报 Top3
+    ↓
+Judge 对「该段 reference × Top3」打四维分（各 0–25，合计 100）
+每段独立 3 次，四维分别取平均
+    ↓
+写入同目录 coverage.md（不入库）
 ```
 
-**缺口诊断：**
+**四维：** 相关性 / 准确性 / 完整性 / 有用性。看核心意思，不抠字眼，不要求同一家媒体。没写到的不算准确性错误。
 
-| 类型 | 含义 |
-|------|------|
-| `retrieval_miss` | 检索未找到 |
-| `summarization_miss` | 材料已找到但报告遗漏 |
-| `potential_unsupported` | 报告有但检索无（潜在无证据） |
-| `correctly_covered` | 检索与报告均覆盖 |
+**段判定标签：** 总分 ≥70 命中，≥45 部分，否则弱覆盖。  
+**综合得分：** 各段总分算术平均。
 
----
+提示词：`evaluation/prompts.py`（`REFERENCE_SECTION_JUDGE_PROMPT`）。  
+脚本：`scripts/eval_reference_coverage.py`。
+
+`evaluation/snapshot.py` 仅导出检索正文快照（CLI `--evaluation-case`），不参与打分。
 
 ## 7. 前端能力（任务一）
 
@@ -319,7 +303,6 @@ overall_score = min(100, overall_base + bonus_points)
 | 报告展示 | Markdown 渲染 + HTML Dashboard（`/report/view`） |
 | 补充检索 | 修改 Tavily Query 重跑 / 追加数据源 |
 | 案例问答 | 基于 Case 内简报、结构化 insights 与原文问答 |
-| 评测面板 | 粘贴 reference → 触发 Judge → 展示覆盖率与缺口 |
 
 ---
 
@@ -345,21 +328,20 @@ overall_score = min(100, overall_base + bonus_points)
 
 ## 9. 案例测试建议
 
-评测案例目录：`evaluation_cases/<事件>/` 或 `data/evaluation_cases/case_N/`
+金标目录：`data/evaluation_cases/case_N/`
 
-每个案例包含：
+每个案例：
 
 - `reference.md`：人工参考报告
-- `rubrics.json`：原子评分细则（可自动生成）
-- `retrieved_documents.json`：实际检索正文快照
-- `report.md`：Agent 输出报告
-- `result.json`：评测结果
+- `coverage.md`：离线覆盖评测输出（脚本生成，不入库）
+
+运行评测：`python3 scripts/eval_reference_coverage.py --case-key case1`
 
 **测试时建议记录：**
 
 1. 各 Provider 成功/失败来源与候选数量
-2. `retrieval_reflection.json` 中的自适应补搜轨迹
-3. 检索覆盖率 vs 报告覆盖率差异（定位检索问题还是生成问题）
+2. `retrieval_reflection.json` 中的自适应补搜轨迹（若有快照）
+3. 覆盖评测四维分，尤其是完整性偏低的段落
 4. 典型失败模式：正文抓取失败、相关性误杀、时间线缺失、来源引用断裂
 
 ---
@@ -390,7 +372,7 @@ overall_score = min(100, overall_base + bonus_points)
 | 简报生成 | `nodes/brief_node.py`、`tools/brief_models.py` |
 | 数据源 | `tools/newsnow_provider.py`、`rss_provider.py`、`tavily_provider.py`、`weibo_provider.py` |
 | 正文读取 | `tools/web_reader.py` |
-| 评测 | `evaluation/judge.py`、`metrics.py`、`rubric_builder.py` |
+| 评测 | `scripts/eval_reference_coverage.py`、`evaluation/prompts.py` |
 | 前端 | `web/index.html`、`web/app.js` |
 | 媒体配置 | `config/media_sources.yaml` |
 
@@ -407,7 +389,7 @@ overall_score = min(100, overall_base + bonus_points)
 5. **Tavily Query**：首轮最多 2 条 → **当前固定 1 条**（带 anchor 校验）；Tavily 自适应补搜**当前关闭**。
 6. **RSS 时间窗**：15 天 → **60 天**（配置可调）。
 7. **微博参数**：3 页 × 20 帖 → **5 页 × 30 帖**；评论抓取配置为启用（Provider 本身默认关闭）。
-8. **前端扩展**：新增案例查找、追加来源、案例问答、评测面板（均属于任务一范畴）。
+8. **前端扩展**：新增案例查找、追加来源、案例问答；评测不进前端，走离线脚本。
 
 ---
 
@@ -435,9 +417,9 @@ overall_score = min(100, overall_base + bonus_points)
 
 **评测类**
 
-- Rubric 为什么要 atomic 化？core/important/bonus 怎么划分？
-- 检索覆盖率和报告覆盖率不一致说明什么？如何定位根因？
-- Judge 证据校验失败时为什么直接降为 0？会不会误杀？
+- 为什么按 reference 段落召回简报 Top3，而不是对整篇简报一次性打分？
+- 四维里完整性和相关性为什么可能差很多？说明简报什么问题？
+- 为什么评测用 flash、写简报用 chat，并且要打 3 次取平均？
 
 **工程类**
 

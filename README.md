@@ -45,33 +45,17 @@ financial-single-agent topic-brief --query "研究事件"
 第一期只保存新闻原始正文；简报生成版、分块、向量、结构化事实和知识图谱暂不入库，
 后续需要时从原文重新生成。
 
-## LLM-as-a-Judge 评测
+## 简报覆盖评测
 
-评测案例位于 `evaluation_cases/<事件>/`。将 mentor 参考报告粘贴到 `reference.md`，
-再生成一次固定的 rubric：
-
-```bash
-python3 -m My_agent.evaluation.run_eval build-rubrics \
-  --case My_agent/evaluation_cases/event_001
-```
-
-Judge 默认使用 `qwen3.7-plus`，可在 `.env` 中设置 `JUDGE_API_KEY`、`JUDGE_BASE_URL`
-和 `JUDGE_MODEL_NAME`。运行 Agent 时指定案例目录，保存实际使用的正文片段和最终报告：
+离线脚本：把导师 `reference.md` 按段切分，召回简报 Top3，用 `deepseek-v4-flash` 打相关/准确/完整/有用四维分（各 25，每段独立 3 次取平均）。不入库、不上前端。
 
 ```bash
-python3 -m My_agent.cli topic-brief \
-  --query "待评测的金融事件" \
-  --evaluation-case My_agent/evaluation_cases/event_001
+python3 scripts/eval_reference_coverage.py --case-key case1
 ```
 
-再执行评测：
+提示词在 `evaluation/prompts.py`。Judge 模型用 `.env` 里的 `JUDGE_MODEL_NAME`（默认 `deepseek-v4-flash`），与写简报的 `deepseek-chat` 分开。
 
-```bash
-python3 -m My_agent.evaluation.run_eval evaluate \
-  --case My_agent/evaluation_cases/event_001
-```
-
-结果写入 `result.json`，包含综合分、检索覆盖、报告覆盖和证据支撑率，以及缺口诊断。
+CLI 仍可用 `--evaluation-case` 导出本次检索正文快照，供对照材料使用。
 
 ## FastAPI 与前端
 

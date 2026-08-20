@@ -3,6 +3,14 @@
 
   const COLORS = ["#5f7f98", "#d98b45", "#759b88", "#9a789e", "#b7a45b"];
 
+  function escapeHtml(value) {
+    return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
+  }
+
   function resetSvg(element, height) {
     const width = Math.max(320, Math.floor(element.parentElement.clientWidth - 36));
     const svg = d3.select(element);
@@ -121,15 +129,108 @@
     );
   }
 
+  function keywordsForScope(analysis, scope) {
+    const hotspots = analysis.keyword_hotspots || {};
+    if (scope === "all") return hotspots.all || [];
+    const round = (hotspots.rounds || []).find((item) => String(item.round) === String(scope));
+    return round?.keywords || [];
+  }
+
+  function defaultKeywordScope(analysis) {
+    const rounds = analysis.keyword_hotspots?.rounds || analysis.round_metrics || [];
+    if (!rounds.length) return "all";
+    return String(rounds[rounds.length - 1].round);
+  }
+
+  function renderKeywordScope(container, analysis, scope, onChange) {
+    if (!container) return;
+    const rounds = analysis.keyword_hotspots?.rounds || analysis.round_metrics || [];
+    const items = [
+      ...rounds.map((row) => [String(row.round), row.round === 0 ? "初始" : `第${row.round}轮`]),
+      ["all", "总推演"],
+    ];
+    container.innerHTML = "";
+    items.forEach(([value, label]) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.dataset.scope = value;
+      button.classList.toggle("is-active", value === String(scope));
+      button.addEventListener("click", () => onChange(value));
+      container.append(button);
+    });
+  }
+
+  function renderKeywordBubbles(element, tooltip, analysis, scope) {
+    const keywords = keywordsForScope(analysis, scope);
+    const { svg, width, height } = resetSvg(element, 360);
+    if (!keywords.length) {
+      svg.append("text")
+        .attr("x", width / 2)
+        .attr("y", height / 2)
+        .attr("text-anchor", "middle")
+        .text("该范围文本不足以统计关键词");
+      return;
+    }
+    const packed = d3.pack().size([width - 16, height - 16]).padding(5)(
+      d3.hierarchy({ children: keywords }).sum((item) => item.count || 0)
+    );
+    const extent = d3.extent(keywords, (item) => item.count);
+    const color = d3.scaleLinear()
+      .domain([extent[0] || 1, extent[1] || 1])
+      .range(["#d7e4e0", "#2f756b"]);
+    const nodes = svg.append("g").attr("transform", "translate(8,8)")
+      .selectAll("g")
+      .data(packed.leaves())
+      .join("g")
+      .attr("transform", (node) => `translate(${node.x},${node.y})`);
+    nodes.append("circle")
+      .attr("class", "keyword-bubble")
+      .attr("r", (node) => node.r)
+      .attr("fill", (node) => color(node.data.count))
+      .attr("fill-opacity", 0.92)
+      .on("mousemove", (event, node) => {
+        if (!tooltip) return;
+        tooltip.hidden = false;
+        tooltip.innerHTML = `<strong>${escapeHtml(node.data.keyword)}</strong>出现：${Number(node.data.count) || 0} 次<br>涉及用户：${Number(node.data.agent_count) || 0} 人`;
+        const card = element.closest(".keyword-card") || element.parentElement;
+        const bounds = card.getBoundingClientRect();
+        tooltip.style.left = `${Math.min(bounds.width - 168, Math.max(8, event.clientX - bounds.left + 12))}px`;
+        tooltip.style.top = `${Math.max(8, event.clientY - bounds.top - 48)}px`;
+      })
+      .on("mouseleave", () => {
+        if (tooltip) tooltip.hidden = true;
+      });
+    nodes.append("text")
+      .attr("class", "keyword-label")
+      .attr("dy", "0.35em")
+      .attr("fill", (node) => node.data.count >= (d3.median(keywords, (item) => item.count) || 0) ? "#f7faf9" : "#21303c")
+      .style("font-size", (node) => `${Math.max(9, Math.min(16, node.r / 2.4))}px`)
+      .text((node) => node.r < 14 ? "" : node.data.keyword);
+  }
+
   function mount(options) {
     let current = null;
+    let scope = null;
+    const applyScope = (next) => {
+      scope = next;
+      if (!current) return;
+      renderKeywordScope(options.keywordScope, current, scope, applyScope);
+      renderKeywordBubbles(options.keywordChart, options.keywordTooltip, current, scope);
+    };
     const render = (analysis) => {
       if (!analysis || !window.d3) return;
       current = analysis;
+      const available = new Set([
+        "all",
+        ...(analysis.keyword_hotspots?.rounds || []).map((item) => String(item.round)),
+      ]);
+      if (!scope || !available.has(String(scope))) scope = defaultKeywordScope(analysis);
       renderCards(options.cards, analysis);
       renderActions(options.actionChart, analysis);
       renderGroups(options.groupChart, analysis);
       renderTopics(options.topicChart, analysis);
+      applyScope(scope);
       options.disclaimer.textContent = analysis.disclaimer || "以下指标只描述本次模拟结果。";
       options.finding.textContent = analysis.summary?.finding || "当前没有足够数据生成结论。";
     };

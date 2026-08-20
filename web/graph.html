@@ -7,12 +7,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/assets/workspace.css">
+  <link rel="stylesheet" href="/assets/workspace.css?v=20260820-keywords">
 </head>
 <body>
   <div class="workspace">
     <header class="workspace-header">
-      <a class="btn-ghost" href="/">返回简报</a>
+      <a id="back-brief" class="btn-ghost" href="/">返回简报</a>
       <h1>知识图谱</h1>
       <span id="graph-meta" class="meta">来源：真实证据</span>
       <nav>
@@ -22,27 +22,46 @@
     <main class="split">
       <section class="graph-stage" id="graph-stage">
         <div class="graph-filters" role="tablist">
-          <button type="button" class="is-active" data-filter="actors">可发声主体</button>
-          <button type="button" data-filter="context">主体与关联知识</button>
-          <button type="button" data-filter="all">完整知识图谱</button>
+          <button type="button" class="is-active" data-filter="all">完整知识图谱</button>
+          <button type="button" data-filter="starters">推演起点</button>
         </div>
         <svg id="graph-svg" role="img" aria-label="真实知识图谱"></svg>
         <div class="graph-legend">
-          <span>大节点：可发声主体</span>
-          <span>小节点：关联知识</span>
+          <span>大节点：推演角色</span>
+          <span>小节点：知识与事实主体</span>
           <span>实线 = 真实证据</span>
         </div>
       </section>
       <aside class="side-panel">
         <div class="side-scroll">
           <div id="graph-message" class="message">正在载入真实图谱…</div>
+          <form id="graph-build" class="build-form" hidden>
+            <label>推演问题
+              <textarea id="graph-question" rows="4" maxlength="500" placeholder="例如：某事件公开后，未来 48 小时内不同主体可能形成哪些关注点、分歧和传播路径？"></textarea>
+            </label>
+            <label>截止时间
+              <input id="graph-as-of" type="datetime-local">
+            </label>
+            <label>时间窗（小时）
+              <input id="graph-horizon" type="number" min="1" max="168" value="48">
+            </label>
+            <label>推演智能体上限
+              <input id="graph-max-agents" type="number" min="2" max="35" value="35">
+            </label>
+            <div class="build-actions">
+              <button type="button" id="graph-generate" class="btn-primary">生成知识图谱</button>
+              <button type="button" id="graph-rebuild" class="btn-ghost" hidden>重建并清除旧推演</button>
+            </div>
+            <p class="form-hint">默认可发声主体全部上场；超过 35 人时按图谱连边和被点名次数去掉较次要的。重建会覆盖图谱并删除该简报已有推演。</p>
+          </form>
           <div id="graph-detail"></div>
         </div>
       </aside>
     </main>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
-  <script src="/assets/graph-view.js"></script>
-  <script src="/assets/graph.js"></script>
+  <script src="/assets/graph-view.js?v=20260819-all-starters"></script>
+  <script src="/assets/case-sim.js?v=20260819-all-starters"></script>
+  <script src="/assets/graph.js?v=20260819-all-starters"></script>
 </body>
 </html>

@@ -264,6 +264,55 @@ html, body {
 .chart-card .group-value { fill: var(--ink-soft); font-size: 9px; }
 .chart-card .cell-value { text-anchor: middle; font-weight: 600; }
 
+.keyword-card { position: relative; }
+.keyword-card svg { height: 360px; }
+
+.chart-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.chart-toggles button {
+  border: 1px solid rgba(12, 27, 42, 0.12);
+  background: transparent;
+  color: var(--ink-soft);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.chart-toggles button.is-active {
+  border-color: #2f756b;
+  background: #2f756b;
+  color: #fff;
+}
+
+.keyword-bubble { cursor: pointer; }
+.keyword-label {
+  fill: #21303c;
+  text-anchor: middle;
+  pointer-events: none;
+  font-weight: 600;
+}
+
+.chart-tooltip {
+  position: absolute;
+  z-index: 3;
+  min-width: 140px;
+  padding: 8px 10px;
+  border: 1px solid rgba(12, 27, 42, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--ink);
+  font-size: 0.75rem;
+  pointer-events: none;
+}
+
+.chart-tooltip strong { display: block; margin-bottom: 4px; }
+
 .analysis-finding {
   margin-top: 12px;
   padding: 14px 16px;
@@ -485,6 +534,47 @@ html, body {
   border: 1px solid var(--line);
   border-radius: 8px;
   font: inherit;
+}
+
+.build-form {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+}
+
+.build-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.build-form textarea,
+.build-form input[type="datetime-local"],
+.build-form input[type="number"] {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+  color: var(--ink);
+  background: #fbfcfc;
+}
+
+.build-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.form-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
 }
 
 .stats {

@@ -1,3 +1,3 @@
-from .base import LLMClient
+from .base import LLMClient, LLMToolCall, LLMTurn
 
-__all__ = ["LLMClient"]
+__all__ = ["LLMClient", "LLMToolCall", "LLMTurn"]

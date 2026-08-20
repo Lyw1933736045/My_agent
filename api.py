@@ -15,17 +15,17 @@ from typing import Literal
 from urllib.parse import quote
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Query, status
-from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
+from fastapi import FastAPI, HTTPException, Query, Request, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from markdown_it import MarkdownIt
 from pydantic import BaseModel, Field
 
 from .agent import FinancialMediaAgent
-from .evaluation.judge import evaluate, load_case
-from .evaluation.metrics import summarize
-from .evaluation.rubric_builder import build_rubrics
-from .evaluation.run_eval import _client
+from .assistant import CaseAssistantAgent, SessionMemoryStore
+from .assistant.brief_runner import run_prepared_case_brief
+from .assistant.tools import AssistantToolbox
 from .evaluation.snapshot import write_snapshot
 from .run_repository import CaseLookupMatch, CaseRecord, RunRecord, RunRepository
 from .state import RunState
@@ -37,6 +37,7 @@ from .tools.media_models import (
     MediaInsight,
 )
 from .tools.case_qa import CaseQAService
+from .tools.knowledge_indexer import index_case_safely
 from .utils.config import PROJECT_ROOT, Settings
 from .utils.media_sources import load_media_sources
 from .tools.text_chunking import select_relevance_chunks, split_text
@@ -63,6 +64,9 @@ class CreatePlanRequest(BaseModel):
 
 class ApprovePlanRequest(BaseModel):
     approved_tavily_queries: list[str] = Field(default_factory=list, max_length=10)
+    newsnow_rss_core: list[str] | None = None
+    newsnow_rss_support: list[str] | None = None
+    weibo_query: str | None = None
 
 
 class PlanResponse(BaseModel):
@@ -147,6 +151,10 @@ class CaseLookupResponse(BaseModel):
     matches: list[CaseMatchResponse] = Field(default_factory=list)
 
 
+class CaseListResponse(BaseModel):
+    cases: list[CaseMatchResponse] = Field(default_factory=list)
+
+
 class ChatRequest(BaseModel):
     question: str = Field(min_length=2, max_length=5_000)
     mode: Literal["fast", "analysis", "deep"]
@@ -166,6 +174,8 @@ class ChatEvidenceResponse(BaseModel):
     title: str = ""
     url: str = ""
     chunk_id: str | None = None
+    origin: str | None = None
+    case_id: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -175,10 +185,7 @@ class ChatResponse(BaseModel):
     citations: list[ChatCitationResponse] = Field(default_factory=list)
     evidence: list[ChatEvidenceResponse] = Field(default_factory=list)
     retrieved_count: int = 0
-
-
-class EvaluateRequest(BaseModel):
-    reference: str = Field(min_length=2, max_length=100_000)
+    retrieval_scope: str = ""
 
 
 class RerunRequest(BaseModel):
@@ -200,11 +207,26 @@ class GenerateBriefRequest(BaseModel):
     save_markdown_file: bool = True
 
 
-class EvaluationResponse(BaseModel):
-    run_id: str
-    status: Literal["pending", "running", "completed", "failed"]
-    summary: dict | None = None
-    error: str | None = None
+class AssistantChatRequest(BaseModel):
+    message: str = Field(min_length=2, max_length=5_000)
+    session_id: str | None = None
+    case_id: str | None = None
+    qa_mode: Literal["fast", "analysis", "deep"] | None = None
+
+
+class AssistantChatResponse(BaseModel):
+    session_id: str
+    case_id: str | None = None
+    answer: str
+    citations: list[ChatCitationResponse] = Field(default_factory=list)
+    evidence: list[ChatEvidenceResponse] = Field(default_factory=list)
+    retrieved_count: int = 0
+    retrieval_scope: str = ""
+    tool_trace: list[dict] = Field(default_factory=list)
+    pending_generation: bool = False
+    started_job: dict | None = None
+    job: dict | None = None
+    open_case_id: str | None = None
 
 
 app = FastAPI(
@@ -217,9 +239,9 @@ app.include_router(simulation_router)
 _settings = Settings()
 _repository = RunRepository(_settings.DATABASE_URL)
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="my-agent")
-_evaluation_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="my-agent-eval")
 _cancel_events: dict[str, Event] = {}
 _run_sources: dict[str, set[str]] = {}
+_assistant_memory = SessionMemoryStore()
 
 
 class _RunCanceled(Exception):
@@ -257,8 +279,60 @@ def _get_case(case_id: str) -> CaseRecord:
     return case
 
 
+def _start_full_research(query: str) -> dict:
+    """Same path as homepage: plan → auto-approve → crawl/analyze/write brief."""
+    topic_query = " ".join(str(query or "").split())
+    if len(topic_query) < 2:
+        raise ValueError("生成简报需要明确主题")
+    state = _new_agent().create_plan(topic_query)
+    run_id = uuid4().hex
+    case_id = uuid4().hex
+    case_key = f"case-{case_id[:8]}"
+    enabled_sources = {"newsnow", "rss", "tavily"}
+    _repository.create_case(
+        case_id=case_id,
+        case_key=case_key,
+        query=state.query,
+        topic=state.topic,
+    )
+    _run_sources[run_id] = enabled_sources
+    _repository.create(
+        run_id=run_id,
+        query=state.query,
+        topic=state.topic,
+        tavily_queries=list(state.tavily_queries),
+        newsnow_rss_core=list(state.newsnow_rss_core),
+        newsnow_rss_support=list(state.newsnow_rss_support),
+        weibo_query=state.weibo_query,
+        enabled_sources=enabled_sources,
+        parent_event_id=case_id,
+    )
+    queries = [" ".join(item.split()) for item in list(state.tavily_queries or []) if str(item).strip()]
+    queries = list(dict.fromkeys(queries))
+    if not _repository.approve(run_id, queries):
+        raise ValueError("无法启动研究任务")
+    _cancel_events[run_id] = Event()
+    _executor.submit(_execute_run, run_id)
+    return {
+        "ok": True,
+        "started": True,
+        "case_id": case_id,
+        "run_id": run_id,
+        "topic": state.topic,
+        "query": state.query,
+        "status": "running",
+        "message": "已开始按完整研究流程生成，进度在左侧。完成后会打开新简报看板。",
+    }
+
+
 def _set_progress(run_id: str, message: str) -> None:
     _repository.update_progress(run_id, message)
+
+
+def _index_run_knowledge(run_id: str) -> None:
+    case_id = _repository.resolve_case_id(run_id)
+    if case_id:
+        index_case_safely(_repository, case_id, _settings)
 
 
 def _prepared_analysis_from_state(state: RunState) -> dict:
@@ -489,46 +563,6 @@ def _candidate_relation_id(run_id: str, url: str) -> str:
 
 def _evaluation_dir(run_id: str) -> Path:
     return PROJECT_ROOT / "data" / "evaluations" / run_id
-
-
-def _evaluation_status(run_id: str) -> dict:
-    path = _evaluation_dir(run_id) / "status.json"
-    if not path.is_file():
-        return {"run_id": run_id, "status": "pending"}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {"run_id": run_id, "status": "pending"}
-    return payload if isinstance(payload, dict) else {"run_id": run_id, "status": "pending"}
-
-
-def _write_evaluation_status(run_id: str, **payload) -> None:
-    directory = _evaluation_dir(run_id)
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / "status.json").write_text(
-        json.dumps({"run_id": run_id, **payload}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-
-
-def _execute_evaluation(run_id: str) -> None:
-    directory = _evaluation_dir(run_id)
-    try:
-        _write_evaluation_status(run_id, status="running")
-        rubrics = build_rubrics(
-            _client(), directory / "reference.md", directory / "rubrics.json", overwrite=True
-        )
-        documents = json.loads((directory / "retrieved_documents.json").read_text(encoding="utf-8"))
-        report = (directory / "report.md").read_text(encoding="utf-8")
-        result = evaluate(_client(), rubrics, documents, report)
-        summary = summarize(result)
-        (directory / "result.json").write_text(
-            json.dumps({"summary": summary, "judgments": result.model_dump()}, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        _write_evaluation_status(run_id, status="completed", summary=summary)
-    except Exception as exc:
-        _write_evaluation_status(run_id, status="failed", error=str(exc))
 
 
 def _sources_payload(discovery: DiscoveryResult | None) -> list[dict]:
@@ -852,12 +886,19 @@ def _execute_run(run_id: str) -> None:
             run_id,
             _prepared_analysis_from_state(state),
         )
+        _index_run_knowledge(run_id)
         _repository.complete(
             run_id,
             result.brief,
             report_data=result.brief_data,
             source_results=sources,
         )
+        if record.parent_event_id:
+            _repository.complete_case_brief(
+                record.parent_event_id,
+                result.brief,
+                result.brief_data or {},
+            )
         try:
             saved = FinancialMediaAgent.save_brief(result.brief)
             _set_progress(run_id, f"研究完成，已保存 {saved.name}")
@@ -963,6 +1004,7 @@ def _execute_source_search(
             saved,
             prepared_analysis,
         )
+        _index_run_knowledge(run_id)
     except _RunCanceled:
         _repository.cancel(run_id)
     except Exception as exc:
@@ -1218,6 +1260,7 @@ def _execute_analysis_resume(run_id: str, execution_id: str) -> None:
                 "accepted_count": len(accepted_documents),
             },
         )
+        _index_run_knowledge(run_id)
     except _RunCanceled:
         _repository.cancel_analysis_resume(run_id, execution_id)
     except Exception as exc:
@@ -1252,34 +1295,16 @@ def _execute_prepared_brief(run_id: str, save_markdown_file: bool) -> None:
 
 def _execute_case_prepared_brief(case_id: str, save_markdown_file: bool) -> None:
     """Generate one report from all prepared child-run insights in a case."""
-    case = _get_case(case_id)
-    prepared = _repository.aggregate_case_prepared_analysis(case.case_id)
     try:
-        if not prepared:
-            raise ValueError("案例下没有可用于生成简报的结构化分析")
-        state = RunState(query=case.query, topic=case.topic)
-        state.insights = [
-            MediaInsight(**item)
-            for item in [
-                *list(prepared.get("media_insights") or []),
-                *list(prepared.get("social_insights") or []),
-            ]
-            if isinstance(item, dict)
-        ]
-        result = _new_agent().generate_brief(state)
-        _repository.complete_case_brief(
-            case.case_id,
-            result.brief,
-            result.brief_data,
+        run_prepared_case_brief(
+            _repository,
+            case_id,
+            settings=_settings,
+            agent=_new_agent(),
+            save_markdown_file=save_markdown_file,
         )
-        if save_markdown_file:
-            saved = FinancialMediaAgent.save_brief(result.brief)
-            _repository.update_case_progress(
-                case.case_id,
-                f"统一研究完成，已保存 {saved.name}",
-            )
     except Exception as exc:
-        _repository.fail_case_brief(case.case_id, str(exc))
+        _repository.fail_case_brief(case_id, str(exc))
 
 
 @app.get("/health")
@@ -1298,6 +1323,24 @@ def lookup_cases(request: CaseLookupRequest) -> CaseLookupResponse:
             matched_terms=item.matched_terms,
         ) for item in matches],
     )
+
+
+@app.get("/api/v1/cases", response_model=CaseListResponse)
+def list_brief_cases() -> CaseListResponse:
+    cases = []
+    for case in _repository.list_brief_cases():
+        cases.append(CaseMatchResponse(
+            case_id=case.case_id,
+            case_key=case.case_key,
+            query=case.query,
+            topic=case.topic,
+            status=case.status,
+            updated_at=case.updated_at.isoformat() if case.updated_at else None,
+            has_report=True,
+            can_reuse=True,
+            match_type="list",
+        ))
+    return CaseListResponse(cases=cases)
 
 
 @app.post(
@@ -1365,9 +1408,17 @@ def approve_plan(run_id: str, request: ApprovePlanRequest) -> RunResponse:
         if query.strip()
     ]
     queries = list(dict.fromkeys(queries))
-    if not queries and not record.tavily_queries:
+    if not queries:
+        queries = [" ".join(item.split()) for item in (record.tavily_queries or []) if item.strip()]
+    if not queries:
         raise HTTPException(status_code=422, detail="缺少 Tavily Query")
-    if not _repository.approve(run_id, queries):
+    if not _repository.approve(
+        run_id,
+        queries,
+        newsnow_rss_core=request.newsnow_rss_core,
+        newsnow_rss_support=request.newsnow_rss_support,
+        weibo_query=request.weibo_query,
+    ):
         raise HTTPException(status_code=409, detail="该任务已经审核，不能重复批准")
     _executor.submit(_execute_run, run_id)
     return _to_run_response(_get_record(run_id))
@@ -1485,7 +1536,10 @@ def generate_prepared_brief(
 
 @app.get("/api/v1/cases/{case_id}", response_model=CaseResponse)
 def get_case(case_id: str) -> CaseResponse:
-    return _to_case_response(_get_case(case_id))
+    payload = _to_case_response(_get_case(case_id))
+    response = JSONResponse(content=jsonable_encoder(payload))
+    response.set_cookie("ma_open_case", payload.case_id, max_age=7 * 24 * 3600, path="/", samesite="lax")
+    return response
 
 
 @app.post("/api/v1/cases/{case_id}/chat", response_model=ChatResponse)
@@ -1495,6 +1549,7 @@ def chat_in_case(case_id: str, request: ChatRequest) -> ChatResponse:
         result = CaseQAService(
             _repository,
             _new_agent().llm_client,
+            settings=_settings,
         ).answer(case, request.question, request.mode)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1507,6 +1562,49 @@ def chat_in_case(case_id: str, request: ChatRequest) -> ChatResponse:
         citations=[ChatCitationResponse(**item.__dict__) for item in result.citations],
         evidence=[ChatEvidenceResponse(**item.__dict__) for item in result.evidence],
         retrieved_count=result.retrieved_count,
+        retrieval_scope=result.retrieval_scope,
+    )
+
+
+@app.post("/api/v1/assistant/chat", response_model=AssistantChatResponse)
+def assistant_chat(request: AssistantChatRequest) -> AssistantChatResponse:
+    if request.case_id:
+        _get_case(request.case_id)
+    try:
+        result = CaseAssistantAgent(
+            _repository,
+            _new_agent().llm_client,
+            settings=_settings,
+            memory_store=_assistant_memory,
+            toolbox=AssistantToolbox(
+                _repository,
+                _new_agent().llm_client,
+                settings=_settings,
+                start_research=_start_full_research,
+            ),
+        ).chat(
+            request.message,
+            session_id=request.session_id,
+            case_id=request.case_id,
+            qa_mode=request.qa_mode,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"助手问答失败：{exc}") from exc
+    return AssistantChatResponse(
+        session_id=result.session_id,
+        case_id=result.case_id,
+        answer=result.answer,
+        citations=[ChatCitationResponse(**item) for item in result.citations if isinstance(item, dict)],
+        evidence=[ChatEvidenceResponse(**item) for item in result.evidence if isinstance(item, dict)],
+        retrieved_count=result.retrieved_count,
+        retrieval_scope=result.retrieval_scope,
+        tool_trace=result.tool_trace,
+        pending_generation=result.pending_generation,
+        started_job=result.started_job,
+        job=result.job,
+        open_case_id=result.open_case_id,
     )
 
 
@@ -1591,27 +1689,6 @@ def get_report(run_id: str) -> dict:
     record = _get_record(run_id)
     report = _require_completed_report(record)
     return {"run_id": run_id, "report": report, "report_data": record.report_data}
-
-
-@app.post("/api/v1/runs/{run_id}/evaluate", response_model=EvaluationResponse, status_code=status.HTTP_202_ACCEPTED)
-def start_evaluation(run_id: str, request: EvaluateRequest) -> EvaluationResponse:
-    record = _get_record(run_id)
-    if record.status != "completed":
-        raise HTTPException(status_code=409, detail="报告尚未完成，不能开始评测")
-    directory = _evaluation_dir(run_id)
-    if not (directory / "retrieved_documents.json").is_file():
-        raise HTTPException(status_code=409, detail="本次运行缺少检索材料快照")
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / "reference.md").write_text(request.reference.strip() + "\n", encoding="utf-8")
-    _write_evaluation_status(run_id, status="pending")
-    _evaluation_executor.submit(_execute_evaluation, run_id)
-    return EvaluationResponse(run_id=run_id, status="pending")
-
-
-@app.get("/api/v1/runs/{run_id}/evaluation", response_model=EvaluationResponse)
-def get_evaluation(run_id: str) -> EvaluationResponse:
-    _get_record(run_id)
-    return EvaluationResponse.model_validate(_evaluation_status(run_id))
 
 
 @app.get("/api/v1/runs/{run_id}/report.md")
@@ -1702,11 +1779,18 @@ def _to_run_response(record: RunRecord) -> RunResponse:
     )
 
 
+class _NoStoreStaticFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-store, must-revalidate"
+        return response
+
+
 def _web_page(name: str) -> FileResponse:
     path = WEB_DIR / name
     if not path.is_file():
         raise HTTPException(status_code=404, detail="前端页面不存在")
-    return FileResponse(path)
+    return FileResponse(path, headers={"Cache-Control": "no-store, must-revalidate"})
 
 
 @app.get("/")
@@ -1730,8 +1814,34 @@ def initialize_database() -> None:
     _repository.mark_interrupted_runs()
 
 
+def _workspace_case_from_request(request: Request, case: str | None) -> str:
+    opened = (request.cookies.get("ma_open_case") or "").strip()
+    requested = (case or "").strip()
+    if opened and requested in {"", "case1"} and opened != "case1":
+        return opened
+    return requested
+
+
+@app.get("/assets/graph.html")
+def legacy_graph_html(request: Request, case: str | None = None):
+    case_ref = _workspace_case_from_request(request, case)
+    target = "/graph"
+    if case_ref:
+        target += f"?case={quote(case_ref)}"
+    return RedirectResponse(target, status_code=302)
+
+
+@app.get("/assets/simulation.html")
+def legacy_simulation_html(request: Request, case: str | None = None):
+    case_ref = _workspace_case_from_request(request, case)
+    target = "/simulation"
+    if case_ref:
+        target += f"?case={quote(case_ref)}"
+    return RedirectResponse(target, status_code=302)
+
+
 if WEB_DIR.is_dir():
-    app.mount("/assets", StaticFiles(directory=WEB_DIR), name="web-assets")
+    app.mount("/assets", _NoStoreStaticFiles(directory=WEB_DIR), name="web-assets")
 
 
 def main() -> None:

@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "event-simulation"
+version = "0.1.0"
+description = "Evidence-grounded multi-agent event simulation"
+readme = "README.md"
+license = {file = "LICENSE"}
+# OASIS/CAMEL 0.2.5 publishes wheels for Python 3.10-3.11 only.
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "python-dotenv>=1.0.0",
+  "SQLAlchemy>=2.0.0",
+  "psycopg[binary]>=3.1.0",
+  "pydantic-settings>=2.2.0",
+]
+
+[project.optional-dependencies]
+graph = [
+  "zep-cloud==3.13.0",
+  "openai>=1.0.0",
+]
+simulation = [
+  "camel-oasis==0.2.5",
+  "camel-ai==0.2.78",
+  # CAMEL 0.2.78 imports FastMCP from mcp.server; mcp 2.x moved this API.
+  "mcp==1.24.0",
+  "openai>=1.0.0",
+]
+
+[project.scripts]
+event-simulation = "event_simulation.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["event_simulation*"]

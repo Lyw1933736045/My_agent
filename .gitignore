@@ -35,5 +35,10 @@ weibo_raw.json
 *_standalone*.json
 *.log
 
+# EventSimulation 本地运行时数据（源码在 EventSimulation/，不提交密钥和产物）
+EventSimulation/.venv/
+EventSimulation/artifacts/
+EventSimulation/log/
+
 # macOS
 .DS_Store

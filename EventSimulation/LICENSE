@@ -1,0 +1,11 @@
+EventSimulation is licensed under the GNU Affero General Public License,
+version 3 only (AGPL-3.0-only).
+
+Copyright (c) 2026 EventSimulation contributors.
+
+This project includes modified portions of MiroFish, which is also licensed
+under AGPL-3.0. You may obtain the complete license text at:
+
+https://www.gnu.org/licenses/agpl-3.0.txt
+
+SPDX-License-Identifier: AGPL-3.0-only

@@ -22,8 +22,7 @@ class SimulationBridgeError(RuntimeError):
 
 class SimulationBridge:
     def __init__(self) -> None:
-        default_root = Path(__file__).resolve().parent.parent / "EventSimulation"
-        self.root = Path(os.getenv("EVENT_SIMULATION_ROOT", str(default_root))).resolve()
+        self.root = self._default_root()
         self.artifacts = Path(
             os.getenv("EVENT_SIMULATION_ARTIFACTS_ROOT", str(self.root / "artifacts"))
         ).resolve()
@@ -33,6 +32,25 @@ class SimulationBridge:
         self.database_url = os.getenv("DATABASE_URL", "")
         self._build_lock = Lock()
         self._running: set[str] = set()
+
+    @staticmethod
+    def _default_root() -> Path:
+        """Prefer the in-repo copy; keep using a sibling runtime if that venv exists."""
+        here = Path(__file__).resolve().parent
+        in_repo = here / "EventSimulation"
+        sibling = here.parent / "EventSimulation"
+        env = os.getenv("EVENT_SIMULATION_ROOT")
+        if env:
+            return Path(env).expanduser().resolve()
+        in_python = in_repo / ".venv" / "bin" / "python"
+        sibling_python = sibling / ".venv" / "bin" / "python"
+        if in_python.is_file():
+            return in_repo.resolve()
+        if sibling_python.is_file():
+            return sibling.resolve()
+        if in_repo.is_dir():
+            return in_repo.resolve()
+        return sibling.resolve()
 
     @staticmethod
     def _validate_ref(value: str, label: str) -> str:
